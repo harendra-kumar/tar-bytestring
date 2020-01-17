@@ -84,6 +84,7 @@ import Control.Applicative ((<$>), (<*>), pure)
 import Data.Word (Word16)
 #endif
 
+type RawFilePath = BS.ByteString
 
 type FileSize  = Int64
 -- | The number of seconds since the UNIX epoch
@@ -121,7 +122,7 @@ data Entry = Entry {
 
 -- | Native 'FilePath' of the file or directory within the archive.
 --
-entryPath :: Entry -> FilePath
+entryPath :: Entry -> RawFilePath
 entryPath = fromTarPath . entryTarPath
 
 -- | The content of a tar archive entry, which depends on the type of entry.
@@ -298,7 +299,7 @@ instance Show TarPath where
 --   For security reasons this should not usually be allowed, but it is your
 --   responsibility to check for these conditions (eg using 'checkSecurity').
 --
-fromTarPath :: TarPath -> FilePath
+fromTarPath :: TarPath -> RawFilePath
 fromTarPath (TarPath namebs prefixbs) = adjustDirectory $
   FilePath.Native.joinPath $ FilePath.Posix.splitDirectories prefix
                           ++ FilePath.Posix.splitDirectories name
@@ -317,7 +318,7 @@ fromTarPath (TarPath namebs prefixbs) = adjustDirectory $
 -- This is useful to check how a 'TarPath' would be interpreted on a specific
 -- operating system, eg to perform portability checks.
 --
-fromTarPathToPosixPath :: TarPath -> FilePath
+fromTarPathToPosixPath :: TarPath -> RawFilePath
 fromTarPathToPosixPath (TarPath namebs prefixbs) = adjustDirectory $
   FilePath.Posix.joinPath $ FilePath.Posix.splitDirectories prefix
                          ++ FilePath.Posix.splitDirectories name
@@ -336,7 +337,7 @@ fromTarPathToPosixPath (TarPath namebs prefixbs) = adjustDirectory $
 -- This is useful to check how a 'TarPath' would be interpreted on a specific
 -- operating system, eg to perform portability checks.
 --
-fromTarPathToWindowsPath :: TarPath -> FilePath
+fromTarPathToWindowsPath :: TarPath -> RawFilePath
 fromTarPathToWindowsPath (TarPath namebs prefixbs) = adjustDirectory $
   FilePath.Windows.joinPath $ FilePath.Posix.splitDirectories prefix
                            ++ FilePath.Posix.splitDirectories name
@@ -354,7 +355,7 @@ fromTarPathToWindowsPath (TarPath namebs prefixbs) = adjustDirectory $
 --
 toTarPath :: Bool -- ^ Is the path for a directory? This is needed because for
                   -- directories a 'TarPath' must always use a trailing @\/@.
-          -> FilePath -> Either String TarPath
+          -> RawFilePath -> Either String TarPath
 toTarPath isDir = splitLongPath
                 . addTrailingSep
                 . FilePath.Posix.joinPath
@@ -370,7 +371,7 @@ toTarPath isDir = splitLongPath
 -- and try to fit as many components into the 100 long name area as possible.
 -- If all the remaining components fit in the 155 name area then we win.
 --
-splitLongPath :: FilePath -> Either String TarPath
+splitLongPath :: RawFilePath -> Either String TarPath
 splitLongPath path =
   case packName nameMax (reverse (FilePath.Posix.splitPath path)) of
     Left err                 -> Left err
@@ -418,13 +419,13 @@ instance NFData LinkTarget where
 -- string is longer than 100 characters or if it contains non-portable
 -- characters.
 --
-toLinkTarget   :: FilePath -> Maybe LinkTarget
+toLinkTarget   :: RawFilePath -> Maybe LinkTarget
 toLinkTarget path | length path <= 100 = Just $! LinkTarget (BS.Char8.pack path)
                   | otherwise          = Nothing
 
 -- | Convert a tar 'LinkTarget' to a native 'FilePath'.
 --
-fromLinkTarget :: LinkTarget -> FilePath
+fromLinkTarget :: LinkTarget -> RawFilePath
 fromLinkTarget (LinkTarget pathbs) = adjustDirectory $
   FilePath.Native.joinPath $ FilePath.Posix.splitDirectories path
   where
@@ -435,7 +436,7 @@ fromLinkTarget (LinkTarget pathbs) = adjustDirectory $
 
 -- | Convert a tar 'LinkTarget' to a Unix/Posix 'FilePath'.
 --
-fromLinkTargetToPosixPath :: LinkTarget -> FilePath
+fromLinkTargetToPosixPath :: LinkTarget -> RawFilePath
 fromLinkTargetToPosixPath (LinkTarget pathbs) = adjustDirectory $
   FilePath.Posix.joinPath $ FilePath.Posix.splitDirectories path
   where
@@ -446,7 +447,7 @@ fromLinkTargetToPosixPath (LinkTarget pathbs) = adjustDirectory $
 
 -- | Convert a tar 'LinkTarget' to a Windows 'FilePath'.
 --
-fromLinkTargetToWindowsPath :: LinkTarget -> FilePath
+fromLinkTargetToWindowsPath :: LinkTarget -> RawFilePath
 fromLinkTargetToWindowsPath (LinkTarget pathbs) = adjustDirectory $
   FilePath.Windows.joinPath $ FilePath.Posix.splitDirectories path
   where

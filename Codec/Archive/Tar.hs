@@ -195,9 +195,9 @@ import Prelude hiding (read)
 --
 -- * @rwxr-xr-x@ for directories
 --
-create :: FilePath   -- ^ Path of the \".tar\" file to write.
-       -> FilePath   -- ^ Base directory
-       -> [FilePath] -- ^ Files and directories to archive, relative to base dir
+create :: RawFilePath   -- ^ Path of the \".tar\" file to write.
+       -> RawFilePath   -- ^ Base directory
+       -> [RawFilePath] -- ^ Files and directories to archive, relative to base dir
        -> IO ()
 create tar base paths = BS.writeFile tar . write =<< pack base paths
 
@@ -229,8 +229,8 @@ create tar base paths = BS.writeFile tar . write =<< pack base paths
 -- containing entries that point outside of the tarball (either absolute paths
 -- or relative paths) will be caught and an exception will be thrown.
 --
-extract :: FilePath -- ^ Destination directory
-        -> FilePath -- ^ Tarball
+extract :: RawFilePath -- ^ Destination directory
+        -> RawFilePath -- ^ Tarball
         -> IO ()
 extract dir tar = unpack dir . read =<< BS.readFile tar
 
@@ -240,9 +240,9 @@ extract dir tar = unpack dir . read =<< BS.readFile tar
 -- end of an existing tar file. Or if the file does not already exists then
 -- it behaves the same as 'create'.
 --
-append :: FilePath   -- ^ Path of the \".tar\" file to write.
-       -> FilePath   -- ^ Base directory
-       -> [FilePath] -- ^ Files and directories to archive, relative to base dir
+append :: RawFilePath   -- ^ Path of the \".tar\" file to write.
+       -> RawFilePath   -- ^ Base directory
+       -> [RawFilePath] -- ^ Files and directories to archive, relative to base dir
        -> IO ()
 append tar base paths =
     withFile tar ReadWriteMode $ \hnd -> do

@@ -59,12 +59,12 @@ import System.IO.Unsafe (unsafeInterleaveIO)
 -- * This function returns results lazily. Subdirectories are scanned
 -- and files are read one by one as the list of entries is consumed.
 --
-pack :: FilePath   -- ^ Base directory
-     -> [FilePath] -- ^ Files and directories to pack, relative to the base dir
+pack :: RawFilePath   -- ^ Base directory
+     -> [RawFilePath] -- ^ Files and directories to pack, relative to the base dir
      -> IO [Entry]
 pack baseDir paths0 = preparePaths baseDir paths0 >>= packPaths baseDir
 
-preparePaths :: FilePath -> [FilePath] -> IO [FilePath]
+preparePaths :: RawFilePath -> [RawFilePath] -> IO [RawFilePath]
 preparePaths baseDir paths =
   fmap concat $ interleave
     [ do isDir  <- doesDirectoryExist (baseDir </> path)
@@ -77,7 +77,7 @@ preparePaths baseDir paths =
            else return [path]
     | path <- paths ]
 
-packPaths :: FilePath -> [FilePath] -> IO [Entry]
+packPaths :: RawFilePath -> [RawFilePath] -> IO [Entry]
 packPaths baseDir paths =
   interleave
     [ do tarpath <- either fail return (toTarPath isDir relpath)
@@ -104,7 +104,7 @@ interleave = unsafeInterleaveIO . go
 --
 -- * The file contents is read lazily.
 --
-packFileEntry :: FilePath -- ^ Full path to find the file on the local disk
+packFileEntry :: RawFilePath -- ^ Full path to find the file on the local disk
               -> TarPath  -- ^ Path to use for the tar Entry in the archive
               -> IO Entry
 packFileEntry filepath tarpath = do
@@ -124,7 +124,7 @@ packFileEntry filepath tarpath = do
 -- The only attribute of the directory that is used is its modification time.
 -- Directory ownership and detailed permissions are not preserved.
 --
-packDirectoryEntry :: FilePath -- ^ Full path to find the file on the local disk
+packDirectoryEntry :: RawFilePath -- ^ Full path to find the file on the local disk
                    -> TarPath  -- ^ Path to use for the tar Entry in the archive
                    -> IO Entry
 packDirectoryEntry filepath tarpath = do
@@ -149,11 +149,11 @@ packDirectoryEntry filepath tarpath = do
 -- * This function returns results lazily. Subdirectories are not scanned
 -- until the files entries in the parent directory have been consumed.
 --
-getDirectoryContentsRecursive :: FilePath -> IO [FilePath]
+getDirectoryContentsRecursive :: RawFilePath -> IO [RawFilePath]
 getDirectoryContentsRecursive dir0 =
   fmap tail (recurseDirectories dir0 [""])
 
-recurseDirectories :: FilePath -> [FilePath] -> IO [FilePath]
+recurseDirectories :: RawFilePath -> [RawFilePath] -> IO [RawFilePath]
 recurseDirectories _    []         = return []
 recurseDirectories base (dir:dirs) = unsafeInterleaveIO $ do
   (files, dirs') <- collect [] [] =<< getDirectoryContents (base </> dir)
@@ -177,7 +177,7 @@ recurseDirectories base (dir:dirs) = unsafeInterleaveIO $ do
     ignore ['.', '.'] = True
     ignore _          = False
 
-getModTime :: FilePath -> IO EpochTime
+getModTime :: RawFilePath -> IO EpochTime
 getModTime path = do
 #if MIN_VERSION_directory(1,2,0)
   -- The directory package switched to the new time package

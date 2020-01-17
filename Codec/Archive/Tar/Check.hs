@@ -116,10 +116,10 @@ showFileNameError mb_plat err = case err of
 -- Note: This check must be used in conjunction with 'checkSecurity'
 -- (or 'checkPortability').
 --
-checkTarbomb :: FilePath -> Entries e -> Entries (Either e TarBombError)
+checkTarbomb :: RawFilePath -> Entries e -> Entries (Either e TarBombError)
 checkTarbomb expectedTopDir = checkEntries (checkEntryTarbomb expectedTopDir)
 
-checkEntryTarbomb :: FilePath -> Entry -> Maybe TarBombError
+checkEntryTarbomb :: RawFilePath -> Entry -> Maybe TarBombError
 checkEntryTarbomb _ entry | nonFilesystemEntry = Nothing
   where
     -- Ignore some special entries we will not unpack anyway
@@ -136,7 +136,7 @@ checkEntryTarbomb expectedTopDir entry =
 
 -- | An error that occurs if a tar file is a \"tar bomb\" that would extract
 -- files outside of the intended directory.
-data TarBombError = TarBombError FilePath FilePath
+data TarBombError = TarBombError RawFilePath RawFilePath
                   deriving (Typeable)
 
 instance Exception TarBombError

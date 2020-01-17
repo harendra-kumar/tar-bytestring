@@ -90,7 +90,7 @@ newtype IntTrie k v = IntTrie (A.UArray Word32 Word32)
 #ifdef TESTS
 -- Example mapping:
 --
-example0 :: [(FilePath, Int)]
+example0 :: [(RawFilePath, Int)]
 example0 =
   [("foo-1.0/foo-1.0.cabal", 512)   -- tar block 1
   ,("foo-1.0/LICENSE",       2048)  -- tar block 4

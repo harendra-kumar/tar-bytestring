@@ -180,7 +180,7 @@ instance NFData TarIndex where
 -- cheaper if you don't look at them.
 --
 data TarIndexEntry = TarFileEntry {-# UNPACK #-} !TarEntryOffset
-                   | TarDir [(FilePath, TarIndexEntry)]
+                   | TarDir [(RawFilePath, TarIndexEntry)]
   deriving (Show, Typeable)
 
 
@@ -206,7 +206,7 @@ type TarEntryOffset = Word32
 --
 -- * 'hReadEntryHeader' to read just the file metadata (e.g. its length);
 --
-lookup :: TarIndex -> FilePath -> Maybe TarIndexEntry
+lookup :: TarIndex -> RawFilePath -> Maybe TarIndexEntry
 lookup (TarIndex pathTable pathTrie _) path = do
     fpath  <- toComponentIds pathTable path
     tentry <- IntTrie.lookup pathTrie fpath
@@ -218,7 +218,7 @@ lookup (TarIndex pathTable pathTrie _) path = do
              | (key, entry) <- entries ]
 
 
-toComponentIds :: StringTable PathComponentId -> FilePath -> Maybe [PathComponentId]
+toComponentIds :: StringTable PathComponentId -> RawFilePath -> Maybe [PathComponentId]
 toComponentIds table =
     lookupComponents []
   . filter (/= BS.Char8.singleton '.')
@@ -230,7 +230,7 @@ toComponentIds table =
       Nothing  -> Nothing
       Just cid -> lookupComponents (cid:cs') cs
 
-fromComponentId :: StringTable PathComponentId -> PathComponentId -> FilePath
+fromComponentId :: StringTable PathComponentId -> PathComponentId -> RawFilePath
 fromComponentId table = BS.Char8.unpack . StringTable.index table
 
 -- | All the files in the index with their corresponding 'TarEntryOffset's.
@@ -238,7 +238,7 @@ fromComponentId table = BS.Char8.unpack . StringTable.index table
 -- Note that the files are in no special order. If you intend to read all or
 -- most files then is is recommended to sort by the 'TarEntryOffset'.
 --
-toList :: TarIndex -> [(FilePath, TarEntryOffset)]
+toList :: TarIndex -> [(RawFilePath, TarEntryOffset)]
 toList (TarIndex pathTable pathTrie _) =
     [ (path, off)
     | (cids, off) <- IntTrie.toList pathTrie
@@ -661,13 +661,13 @@ prop_serialiseSize (ValidPaths paths) =
   where
     index = construct paths
 
-newtype NonEmptyFilePath = NonEmptyFilePath FilePath deriving Show
+newtype NonEmptyFilePath = NonEmptyFilePath RawFilePath deriving Show
 
 instance Arbitrary NonEmptyFilePath where
   arbitrary = NonEmptyFilePath . FilePath.joinPath
                 <$> listOf1 (elements ["a", "b", "c", "d"])
 
-newtype ValidPaths = ValidPaths [(FilePath, (Int64, TarEntryOffset))] deriving Show
+newtype ValidPaths = ValidPaths [(RawFilePath, (Int64, TarEntryOffset))] deriving Show
 
 instance Arbitrary ValidPaths where
   arbitrary = do
@@ -690,7 +690,7 @@ instance Arbitrary ValidPaths where
       blocks size = fromIntegral (1 + ((size - 1) `div` 512))
 
 -- Helper for bulk construction.
-construct :: [(FilePath, (Int64, TarEntryOffset))] -> TarIndex
+construct :: [(RawFilePath, (Int64, TarEntryOffset))] -> TarIndex
 construct =
     either (\_ -> undefined) id
   . build
@@ -707,7 +707,7 @@ example1 :: Entries ()
 example1 =
   Next (testEntry "./" 1500) Done <> example0
 
-testEntry :: FilePath -> Int64 -> Entry
+testEntry :: RawFilePath -> Int64 -> Entry
 testEntry name size = simpleEntry path (NormalFile mempty size)
   where
     Right path = toTarPath False name

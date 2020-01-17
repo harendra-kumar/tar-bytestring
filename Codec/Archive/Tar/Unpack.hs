@@ -63,7 +63,7 @@ import System.IO.Error
 -- If you care about the priority of the reported errors then you may want to
 -- use 'checkSecurity' before 'checkTarbomb' or other checks.
 --
-unpack :: Exception e => FilePath -> Entries e -> IO ()
+unpack :: Exception e => RawFilePath -> Entries e -> IO ()
 unpack baseDir entries = unpackEntries [] (checkSecurity entries)
                      >>= emulateLinks
 
@@ -112,7 +112,7 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
           absTarget = FilePath.Native.takeDirectory absPath </> relLinkTarget
        in copyFile absTarget absPath
 
-setModTime :: FilePath -> EpochTime -> IO ()
+setModTime :: RawFilePath -> EpochTime -> IO ()
 #if MIN_VERSION_directory(1,2,3)
 -- functionality only supported as of directory-1.2.3.x
 setModTime path t =
