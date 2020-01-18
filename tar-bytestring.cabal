@@ -35,7 +35,7 @@ library
   if os(windows)
     build-depends: unbuildable<0
     buildable: False
-  build-depends: base       >= 4.12,
+  build-depends: base       >= 4.12 && < 5,
                  bytestring >= 0.10,
                  array                < 0.6,
                  time >= 1.8,
@@ -80,7 +80,7 @@ test-suite properties
     build-depends: unbuildable<0
     buildable: False
   type:          exitcode-stdio-1.0
-  build-depends: base       >= 4.12,
+  build-depends: base       >= 4.12 && < 5,
                  bytestring >= 0.10,
                  array,
                  containers,
@@ -134,7 +134,7 @@ benchmark bench
   type:          exitcode-stdio-1.0
   hs-source-dirs: . bench
   main-is:       bench/Main.hs
-  build-depends: base       >= 4.12,
+  build-depends: base       >= 4.12 && < 5,
                  bytestring >= 0.10,
                  time,
                  array,
