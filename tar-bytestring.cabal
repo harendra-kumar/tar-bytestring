@@ -73,7 +73,7 @@ library
     PatternGuards
     ScopedTypeVariables
 
-  ghc-options: -Wall -fno-warn-unused-imports
+  ghc-options: -Wall -fno-warn-unused-imports -O2 -fspec-constr-recursive=16 -fmax-worker-args=16
 
 test-suite properties
   if os(windows)
