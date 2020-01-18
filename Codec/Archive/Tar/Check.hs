@@ -33,11 +33,9 @@ import Codec.Archive.Tar.Types
 import Data.Typeable (Typeable)
 import Control.Exception (Exception)
 import Control.Monad (MonadPlus(mplus))
-import qualified System.FilePath as FilePath.Native
-         ( splitDirectories, isAbsolute, isValid )
-
-import qualified System.FilePath.Windows as FilePath.Windows
-import qualified System.FilePath.Posix   as FilePath.Posix
+import qualified System.Posix.FilePath as FilePath.Posix
+import qualified Data.ByteString as BS
+import Data.Word8
 
 
 --------------------------
@@ -72,21 +70,21 @@ checkEntrySecurity entry = case entryContent entry of
 
   where
     check name
-      | FilePath.Native.isAbsolute name
+      | FilePath.Posix.isAbsolute name
       = Just $ AbsoluteFileName name
 
-      | not (FilePath.Native.isValid name)
+      | not (FilePath.Posix.isValid name)
       = Just $ InvalidFileName name
 
-      | any (=="..") (FilePath.Native.splitDirectories name)
+      | any (BS.pack [_period, _period] ==) (FilePath.Posix.splitDirectories name)
       = Just $ InvalidFileName name
 
       | otherwise = Nothing
 
 -- | Errors arising from tar file names being in some way invalid or dangerous
 data FileNameError
-  = InvalidFileName FilePath
-  | AbsoluteFileName FilePath
+  = InvalidFileName RawFilePath
+  | AbsoluteFileName RawFilePath
   deriving (Typeable)
 
 instance Show FileNameError where
@@ -130,7 +128,7 @@ checkEntryTarbomb _ entry | nonFilesystemEntry = Nothing
         _                      -> False
 
 checkEntryTarbomb expectedTopDir entry =
-  case FilePath.Native.splitDirectories (entryPath entry) of
+  case FilePath.Posix.splitDirectories (entryPath entry) of
     (topDir:_) | topDir == expectedTopDir -> Nothing
     _ -> Just $ TarBombError expectedTopDir (entryPath entry)
 
@@ -179,30 +177,23 @@ checkEntryPortability entry
   | not (portableFileType (entryContent entry))
   = Just NonPortableFileType
 
-  | not (all portableChar posixPath)
+  | not (all portableChar (BS.unpack posixPath))
   = Just $ NonPortableEntryNameChar posixPath
 
   | not (FilePath.Posix.isValid posixPath)
   = Just $ NonPortableFileName "unix"    (InvalidFileName posixPath)
-  | not (FilePath.Windows.isValid windowsPath)
-  = Just $ NonPortableFileName "windows" (InvalidFileName windowsPath)
 
   | FilePath.Posix.isAbsolute posixPath
   = Just $ NonPortableFileName "unix"    (AbsoluteFileName posixPath)
-  | FilePath.Windows.isAbsolute windowsPath
-  = Just $ NonPortableFileName "windows" (AbsoluteFileName windowsPath)
 
-  | any (=="..") (FilePath.Posix.splitDirectories posixPath)
+  | any (BS.pack [_period, _period] ==) (FilePath.Posix.splitDirectories posixPath)
   = Just $ NonPortableFileName "unix"    (InvalidFileName posixPath)
-  | any (=="..") (FilePath.Windows.splitDirectories windowsPath)
-  = Just $ NonPortableFileName "windows" (InvalidFileName windowsPath)
 
   | otherwise = Nothing
 
   where
     tarPath     = entryTarPath entry
     posixPath   = fromTarPathToPosixPath   tarPath
-    windowsPath = fromTarPathToWindowsPath tarPath
 
     portableFileType ftype = case ftype of
       NormalFile   {} -> True
@@ -211,13 +202,13 @@ checkEntryPortability entry
       Directory       -> True
       _               -> False
 
-    portableChar c = c <= '\127'
+    portableChar c = c <= 127
 
 -- | Portability problems in a tar archive
 data PortabilityError
   = NonPortableFormat Format
   | NonPortableFileType
-  | NonPortableEntryNameChar FilePath
+  | NonPortableEntryNameChar RawFilePath
   | NonPortableFileName PortabilityPlatform FileNameError
   deriving (Typeable)
 

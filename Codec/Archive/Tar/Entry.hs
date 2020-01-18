@@ -65,14 +65,12 @@ module Codec.Archive.Tar.Entry (
   toTarPath,
   fromTarPath,
   fromTarPathToPosixPath,
-  fromTarPathToWindowsPath,
 
   -- * LinkTarget type
   LinkTarget,
   toLinkTarget,
   fromLinkTarget,
   fromLinkTargetToPosixPath,
-  fromLinkTargetToWindowsPath,
 
   ) where
 

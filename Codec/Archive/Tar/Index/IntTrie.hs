@@ -48,6 +48,7 @@ import Data.Monoid (Monoid(..))
 import Data.Monoid ((<>))
 #endif
 import qualified Data.ByteString        as BS
+import qualified Data.ByteString.Char8  as BS.Char8
 import qualified Data.ByteString.Lazy   as LBS
 import qualified Data.ByteString.Unsafe as BS
 #if MIN_VERSION_bytestring(0,10,2) || defined(MIN_VERSION_bytestring_builder)
@@ -73,6 +74,8 @@ import Data.Function (on)
 import Test.QuickCheck
 import Control.Applicative ((<$>), (<*>))
 #endif
+import System.Posix.ByteString.FilePath (RawFilePath)
+
 
 
 -- | A compact mapping from sequences of nats to nats.
@@ -92,9 +95,9 @@ newtype IntTrie k v = IntTrie (A.UArray Word32 Word32)
 --
 example0 :: [(RawFilePath, Int)]
 example0 =
-  [("foo-1.0/foo-1.0.cabal", 512)   -- tar block 1
-  ,("foo-1.0/LICENSE",       2048)  -- tar block 4
-  ,("foo-1.0/Data/Foo.hs",   4096)] -- tar block 8
+  [(BS.Char8.pack "foo-1.0/foo-1.0.cabal", 512)   -- tar block 1
+  ,(BS.Char8.pack "foo-1.0/LICENSE",       2048)  -- tar block 4
+  ,(BS.Char8.pack "foo-1.0/Data/Foo.hs",   4096)] -- tar block 8
 
 -- After converting path components to integers this becomes:
 --

@@ -18,26 +18,28 @@ module Codec.Archive.Tar.Unpack (
 import Codec.Archive.Tar.Types
 import Codec.Archive.Tar.Check
 
-import qualified Data.ByteString.Lazy as BS
-import System.FilePath
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as L
+import System.Posix.FilePath
          ( (</>) )
-import qualified System.FilePath as FilePath.Native
+import qualified System.Posix.FilePath as FilePath.Native
          ( takeDirectory )
-import System.Directory
-         ( createDirectoryIfMissing, copyFile )
-import Control.Exception
-         ( Exception, throwIO )
-#if MIN_VERSION_directory(1,2,3)
-import System.Directory
-         ( setModificationTime )
+import           Control.Exception              ( Exception
+                                                , throwIO
+                                                , finally
+                                                )
 import Data.Time.Clock.POSIX
          ( posixSecondsToUTCTime )
 import Control.Exception as Exception
          ( catch )
 import System.IO.Error
          ( isPermissionError )
-#endif
-
+import HPath hiding ((</>))
+import HPath.IO hiding (Directory, SymbolicLink)
+import qualified System.Posix.IO.ByteString as SPI
+import qualified System.Posix as Posix
+import System.Posix.FD
+import System.IO (hClose)
 
 -- | Create local files and directories based on the entries of a tar archive.
 --
@@ -89,36 +91,31 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
       -- Note that tar archives do not make sure each directory is created
       -- before files they contain, indeed we may have to create several
       -- levels of directory.
-      createDirectoryIfMissing True absDir
-      BS.writeFile absPath content
+      withRawFilePath absDir (\p -> createDirRecursive newDirPerms p)
+      withRawFilePath absPath (\p -> writeFileL p (Just newFilePerms) content)
       setModTime absPath mtime
       where
         absDir  = baseDir </> FilePath.Native.takeDirectory path
         absPath = baseDir </> path
 
     extractDir path mtime = do
-      createDirectoryIfMissing True absPath
+      withRawFilePath absPath $ \p -> createDirRecursive newDirPerms p
       setModTime absPath mtime
       where
         absPath = baseDir </> path
 
-    saveLink path link links = seq (length path)
-                             $ seq (length link')
+    saveLink path link links = seq (BS.length path)
+                             $ seq (BS.length link')
                              $ (path, link'):links
       where link' = fromLinkTarget link
 
-    emulateLinks = mapM_ $ \(relPath, relLinkTarget) ->
-      let absPath   = baseDir </> relPath
+    emulateLinks = mapM_ $ \(relPath, relLinkTarget) -> do
+      let absPath = baseDir </> relPath
           absTarget = FilePath.Native.takeDirectory absPath </> relLinkTarget
-       in copyFile absTarget absPath
+      withRawFilePath absPath $ \absPath' -> withRawFilePath absTarget $ \absTarget' -> copyFile absTarget' absPath' Overwrite
 
 setModTime :: RawFilePath -> EpochTime -> IO ()
-#if MIN_VERSION_directory(1,2,3)
--- functionality only supported as of directory-1.2.3.x
-setModTime path t =
-    setModificationTime path (posixSecondsToUTCTime (fromIntegral t))
-      `Exception.catch` \e ->
-        if isPermissionError e then return () else throwIO e
-#else
-setModTime _path _t = return ()
-#endif
+setModTime path t = withRawFilePath path $ \p -> do
+  setModificationTime p (fromIntegral t)
+    `Exception.catch` \e ->
+      if isPermissionError e then return () else throwIO e

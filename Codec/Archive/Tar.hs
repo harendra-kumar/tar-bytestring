@@ -162,7 +162,9 @@ import Codec.Archive.Tar.Check
 import Control.Exception (Exception, throw, catch)
 import qualified Data.ByteString.Lazy as BS
 import System.IO (withFile, IOMode(..))
-import Prelude hiding (read)
+import Prelude hiding (read, readFile)
+import HPath.IO
+import System.Posix.IO (OpenMode(..))
 
 -- | Create a new @\".tar\"@ file from a directory of files.
 --
@@ -199,7 +201,8 @@ create :: RawFilePath   -- ^ Path of the \".tar\" file to write.
        -> RawFilePath   -- ^ Base directory
        -> [RawFilePath] -- ^ Files and directories to archive, relative to base dir
        -> IO ()
-create tar base paths = BS.writeFile tar . write =<< pack base paths
+create tar base paths =
+  withRawFilePath tar $ (\p -> writeFileL p (Just newFilePerms) . write =<< pack base paths)
 
 -- | Extract all the files contained in a @\".tar\"@ file.
 --
@@ -232,7 +235,7 @@ create tar base paths = BS.writeFile tar . write =<< pack base paths
 extract :: RawFilePath -- ^ Destination directory
         -> RawFilePath -- ^ Tarball
         -> IO ()
-extract dir tar = unpack dir . read =<< BS.readFile tar
+extract dir tar = unpack dir . read =<< (withRawFilePath tar $ readFile)
 
 -- | Append new entries to a @\".tar\"@ file from a directory of files.
 --
@@ -245,7 +248,7 @@ append :: RawFilePath   -- ^ Path of the \".tar\" file to write.
        -> [RawFilePath] -- ^ Files and directories to archive, relative to base dir
        -> IO ()
 append tar base paths =
-    withFile tar ReadWriteMode $ \hnd -> do
+  withHandle tar ReadWrite $ \(hnd, _) -> do
       _ <- hSeekEndEntryOffset hnd Nothing
       BS.hPut hnd . write =<< pack base paths
 

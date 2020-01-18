@@ -20,25 +20,20 @@ module Codec.Archive.Tar.Pack (
   ) where
 
 import Codec.Archive.Tar.Types
-
-import qualified Data.ByteString.Lazy as BS
-import System.FilePath
-         ( (</>) )
-import qualified System.FilePath as FilePath.Native
-         ( addTrailingPathSeparator, hasTrailingPathSeparator )
-import System.Directory
-         ( getDirectoryContents, doesDirectoryExist, getModificationTime
-         , Permissions(..), getPermissions )
-#if MIN_VERSION_directory(1,2,0)
--- The directory package switched to the new time package
+import Control.Applicative
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as L
+import qualified System.Posix.IO.ByteString as SPI
+import System.Posix.FD
+import System.Posix.ByteString.FilePath (RawFilePath)
+import qualified System.Posix.FilePath as FilePath.Posix
+import System.Posix.FilePath ( (</>), isSpecialDirectoryEntry )
+import HPath (toFilePath)
+import HPath.IO
 import Data.Time.Clock
          ( UTCTime )
 import Data.Time.Clock.POSIX
          ( utcTimeToPOSIXSeconds )
-#else
-import System.Time
-         ( ClockTime(..) )
-#endif
 import System.IO
          ( IOMode(ReadMode), openBinaryFile, hFileSize )
 import System.IO.Unsafe (unsafeInterleaveIO)
@@ -67,12 +62,12 @@ pack baseDir paths0 = preparePaths baseDir paths0 >>= packPaths baseDir
 preparePaths :: RawFilePath -> [RawFilePath] -> IO [RawFilePath]
 preparePaths baseDir paths =
   fmap concat $ interleave
-    [ do isDir  <- doesDirectoryExist (baseDir </> path)
+    [ do isDir  <- withRawFilePath (baseDir </> path) $ \p -> doesDirectoryExist p
          if isDir
            then do entries <- getDirectoryContentsRecursive (baseDir </> path)
                    let entries' = map (path </>) entries
-                       dir = FilePath.Native.addTrailingPathSeparator path
-                   if null path then return entries'
+                       dir = FilePath.Posix.addTrailingPathSeparator path
+                   if BS.null path then return entries'
                                 else return (dir : entries')
            else return [path]
     | path <- paths ]
@@ -84,7 +79,7 @@ packPaths baseDir paths =
          if isDir then packDirectoryEntry filepath tarpath
                   else packFileEntry      filepath tarpath
     | relpath <- paths
-    , let isDir    = FilePath.Native.hasTrailingPathSeparator filepath
+    , let isDir    = FilePath.Posix.hasTrailingPathSeparator filepath
           filepath = baseDir </> relpath ]
 
 interleave :: [IO a] -> IO [a]
@@ -109,13 +104,13 @@ packFileEntry :: RawFilePath -- ^ Full path to find the file on the local disk
               -> IO Entry
 packFileEntry filepath tarpath = do
   mtime   <- getModTime filepath
-  perms   <- getPermissions filepath
-  file    <- openBinaryFile filepath ReadMode
+  executable   <- withRawFilePath filepath $ isExecutable
+  file    <- openFd filepath SPI.ReadOnly [] Nothing >>= SPI.fdToHandle
   size    <- hFileSize file
-  content <- BS.hGetContents file
+  content <- L.hGetContents file
   return (simpleEntry tarpath (NormalFile content (fromIntegral size))) {
-    entryPermissions = if executable perms then executableFilePermissions
-                                           else ordinaryFilePermissions,
+    entryPermissions = if executable then executableFilePermissions
+                                     else ordinaryFilePermissions,
     entryTime = mtime
   }
 
@@ -138,7 +133,7 @@ packDirectoryEntry filepath tarpath = do
 --
 -- The paths returned are all relative to the top directory. Directory paths
 -- are distinguishable by having a trailing path separator
--- (see 'FilePath.Native.hasTrailingPathSeparator').
+-- (see 'FilePath.Posix.hasTrailingPathSeparator').
 --
 -- All directories are listed before the files that they contain. Amongst the
 -- contents of a directory, subdirectories are listed after normal files. The
@@ -151,39 +146,30 @@ packDirectoryEntry filepath tarpath = do
 --
 getDirectoryContentsRecursive :: RawFilePath -> IO [RawFilePath]
 getDirectoryContentsRecursive dir0 =
-  fmap tail (recurseDirectories dir0 [""])
+  fmap tail (recurseDirectories dir0 [BS.empty])
 
 recurseDirectories :: RawFilePath -> [RawFilePath] -> IO [RawFilePath]
 recurseDirectories _    []         = return []
 recurseDirectories base (dir:dirs) = unsafeInterleaveIO $ do
-  (files, dirs') <- collect [] [] =<< getDirectoryContents (base </> dir)
+  (files, dirs') <- collect [] [] =<< ((fmap . fmap) toFilePath $ (withRawFilePath (base </> dir) $ getDirsFiles'))
 
   files' <- recurseDirectories base (dirs' ++ dirs)
   return (dir : files ++ files')
 
   where
     collect files dirs' []              = return (reverse files, reverse dirs')
-    collect files dirs' (entry:entries) | ignore entry
+    collect files dirs' (entry:entries) | isSpecialDirectoryEntry entry
                                         = collect files dirs' entries
     collect files dirs' (entry:entries) = do
       let dirEntry  = dir </> entry
-          dirEntry' = FilePath.Native.addTrailingPathSeparator dirEntry
-      isDirectory <- doesDirectoryExist (base </> dirEntry)
+          dirEntry' = FilePath.Posix.addTrailingPathSeparator dirEntry
+      isDirectory <- withRawFilePath (base </> dirEntry) $ doesDirectoryExist
       if isDirectory
         then collect files (dirEntry':dirs') entries
         else collect (dirEntry:files) dirs' entries
 
-    ignore ['.']      = True
-    ignore ['.', '.'] = True
-    ignore _          = False
 
 getModTime :: RawFilePath -> IO EpochTime
 getModTime path = do
-#if MIN_VERSION_directory(1,2,0)
-  -- The directory package switched to the new time package
-  t <- getModificationTime path
+  t <- withRawFilePath path $ getModificationTime
   return . floor . utcTimeToPOSIXSeconds $ t
-#else
-  (TOD s _) <- getModificationTime path
-  return $! fromIntegral s
-#endif

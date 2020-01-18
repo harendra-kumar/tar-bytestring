@@ -94,12 +94,13 @@ import Codec.Archive.Tar.Index.StringTable (StringTable, StringTableBuilder)
 import qualified Codec.Archive.Tar.Index.IntTrie as IntTrie
 import Codec.Archive.Tar.Index.IntTrie (IntTrie, IntTrieBuilder)
 
-import qualified System.FilePath.Posix as FilePath
+import qualified System.Posix.FilePath as FilePath
 import Data.Monoid (Monoid(..))
 #if (MIN_VERSION_base(4,5,0))
 import Data.Monoid ((<>))
 #endif
 import Data.Word
+import Data.Word8
 import Data.Int
 import Data.Bits
 import qualified Data.Array.Unboxed as A
@@ -109,7 +110,7 @@ import Control.Exception (assert, throwIO)
 import Control.DeepSeq
 
 import qualified Data.ByteString        as BS
-import qualified Data.ByteString.Char8  as BS.Char8
+import qualified Data.ByteString.Char8 as BS.Char8
 import qualified Data.ByteString.Lazy   as LBS
 import qualified Data.ByteString.Unsafe as BS
 #if MIN_VERSION_bytestring(0,10,2) || defined(MIN_VERSION_bytestring_builder)
@@ -221,9 +222,8 @@ lookup (TarIndex pathTable pathTrie _) path = do
 toComponentIds :: StringTable PathComponentId -> RawFilePath -> Maybe [PathComponentId]
 toComponentIds table =
     lookupComponents []
-  . filter (/= BS.Char8.singleton '.')
+  . filter (/= BS.singleton _period)
   . splitDirectories
-  . BS.Char8.pack
   where
     lookupComponents cs' []     = Just (reverse cs')
     lookupComponents cs' (c:cs) = case StringTable.lookup table c of
@@ -231,7 +231,7 @@ toComponentIds table =
       Just cid -> lookupComponents (cid:cs') cs
 
 fromComponentId :: StringTable PathComponentId -> PathComponentId -> RawFilePath
-fromComponentId table = BS.Char8.unpack . StringTable.index table
+fromComponentId table = StringTable.index table
 
 -- | All the files in the index with their corresponding 'TarEntryOffset's.
 --
@@ -368,9 +368,9 @@ splitTarPath (TarPath name prefix) =
 
 splitDirectories :: FilePathBS -> [FilePathBS]
 splitDirectories bs =
-    case BS.Char8.split '/' bs of
-      c:cs | BS.null c -> BS.Char8.singleton '/' : filter (not . BS.null) cs
-      cs               ->                          filter (not . BS.null) cs
+    case BS.split _slash bs of
+      c:cs | BS.null c -> BS.singleton _slash : filter (not . BS.null) cs
+      cs               ->                       filter (not . BS.null) cs
 
 
 -------------------------
@@ -617,7 +617,7 @@ prop_lookup (ValidPaths paths) (NonEmptyFilePath p) =
     index       = construct paths
     completions = [ head (FilePath.splitDirectories completion)
                   | (path,_) <- paths
-                  , completion <- maybeToList $ stripPrefix (p ++ "/") path ]
+                  , completion <- maybeToList $ BS.stripPrefix (p `BS.append` (BS.Char8.pack "/")) path ]
 
 prop_toList :: ValidPaths -> Bool
 prop_toList (ValidPaths paths) =
@@ -637,7 +637,7 @@ prop_valid (ValidPaths paths)
   where
     index@(TarIndex pathTable _ _) = construct paths
 
-    pathbits = concatMap (map BS.Char8.pack . FilePath.splitDirectories . fst)
+    pathbits = concatMap (FilePath.splitDirectories . fst)
                          paths
     intpaths = [ (cids, offset)
                | (path, (_size, offset)) <- paths
@@ -664,7 +664,7 @@ prop_serialiseSize (ValidPaths paths) =
 newtype NonEmptyFilePath = NonEmptyFilePath RawFilePath deriving Show
 
 instance Arbitrary NonEmptyFilePath where
-  arbitrary = NonEmptyFilePath . FilePath.joinPath
+  arbitrary = NonEmptyFilePath . FilePath.joinPath . fmap BS.Char8.pack
                 <$> listOf1 (elements ["a", "b", "c", "d"])
 
 newtype ValidPaths = ValidPaths [(RawFilePath, (Int64, TarEntryOffset))] deriving Show
@@ -676,7 +676,7 @@ instance Arbitrary ValidPaths where
       let offsets = scanl (\o sz -> o + 1 + blocks sz) 0 sizes
       return (ValidPaths (zip paths (zip sizes offsets)))
     where
-      arbitraryPath   = FilePath.joinPath
+      arbitraryPath   = FilePath.joinPath . fmap BS.Char8.pack
                          <$> listOf1 (elements ["a", "b", "c", "d"])
       makeNoPrefix [] = []
       makeNoPrefix (k:ks)
@@ -684,7 +684,7 @@ instance Arbitrary ValidPaths where
                      = k : makeNoPrefix ks
         | otherwise  =     makeNoPrefix ks
 
-      isPrefixOfOther a b = a `isPrefixOf` b || b `isPrefixOf` a
+      isPrefixOfOther a b = a `BS.isPrefixOf` b || b `BS.isPrefixOf` a
 
       blocks :: Int64 -> TarEntryOffset
       blocks size = fromIntegral (1 + ((size - 1) `div` 512))
@@ -698,14 +698,14 @@ construct =
 
 example0 :: Entries ()
 example0 =
-         testEntry "foo-1.0/foo-1.0.cabal" 1500 -- at block 0
-  `Next` testEntry "foo-1.0/LICENSE"       2000 -- at block 4
-  `Next` testEntry "foo-1.0/Data/Foo.hs"   1000 -- at block 9
+         testEntry (BS.Char8.pack "foo-1.0/foo-1.0.cabal") 1500 -- at block 0
+  `Next` testEntry (BS.Char8.pack "foo-1.0/LICENSE")       2000 -- at block 4
+  `Next` testEntry (BS.Char8.pack "foo-1.0/Data/Foo.hs")   1000 -- at block 9
   `Next` Done
 
 example1 :: Entries ()
 example1 =
-  Next (testEntry "./" 1500) Done <> example0
+  Next (testEntry (BS.Char8.pack "./") 1500) Done <> example0
 
 testEntry :: RawFilePath -> Int64 -> Entry
 testEntry name size = simpleEntry path (NormalFile mempty size)
@@ -715,7 +715,7 @@ testEntry name size = simpleEntry path (NormalFile mempty size)
 -- | Simple tar archive containing regular files only
 data SimpleTarArchive = SimpleTarArchive {
     simpleTarEntries :: Tar.Entries ()
-  , simpleTarRaw     :: [(FilePath, LBS.ByteString)]
+  , simpleTarRaw     :: [(RawFilePath, LBS.ByteString)]
   , simpleTarBS      :: LBS.ByteString
   }
 
@@ -762,16 +762,16 @@ instance Arbitrary SimpleTarArchive where
         , simpleTarBS      = Tar.write entries
         }
     where
-      mkRaw :: Int -> Gen [(FilePath, LBS.ByteString)]
+      mkRaw :: Int -> Gen [(RawFilePath, LBS.ByteString)]
       mkRaw 0 = return []
       mkRaw n = do
          -- Pick a size around 0, 1, or 2 block boundaries
          sz <- sized $ \n -> elements (take n fileSizes)
          bs <- LBS.pack `fmap` vectorOf sz arbitrary
          es <- mkRaw (n - 1)
-         return $ ("file" ++ show n, bs) : es
+         return $ (BS.Char8.pack "file" `BS.append` (BS.singleton (fromIntegral n)), bs) : es
 
-      mkList :: [(FilePath, LBS.ByteString)] -> [Tar.Entry]
+      mkList :: [(RawFilePath, LBS.ByteString)] -> [Tar.Entry]
       mkList []            = []
       mkList ((fp, bs):es) = entry : mkList es
         where
