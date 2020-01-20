@@ -91,15 +91,19 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
       -- Note that tar archives do not make sure each directory is created
       -- before files they contain, indeed we may have to create several
       -- levels of directory.
-      withRawFilePath absDir (\p -> createDirRecursive newDirPerms p)
-      withRawFilePath absPath (\p -> writeFileL p (Just newFilePerms) content)
+      withRawFilePath absDir (\p -> either (createDirRecursive newDirPerms)
+                                           (createDirRecursive newDirPerms) p)
+      withRawFilePath absPath (\p -> case p of
+                              Right x -> writeFileL x (Just newFilePerms) content
+                              Left x  -> writeFileL x (Just newFilePerms) content)
       setModTime absPath mtime
       where
         absDir  = baseDir </> FilePath.Native.takeDirectory path
         absPath = baseDir </> path
 
     extractDir path mtime = do
-      withRawFilePath absPath $ \p -> createDirRecursive newDirPerms p
+      withRawFilePath absPath $ \p -> either (createDirRecursive newDirPerms)
+                                             (createDirRecursive newDirPerms) p
       setModTime absPath mtime
       where
         absPath = baseDir </> path
@@ -112,10 +116,16 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
     emulateLinks = mapM_ $ \(relPath, relLinkTarget) -> do
       let absPath = baseDir </> relPath
           absTarget = FilePath.Native.takeDirectory absPath </> relLinkTarget
-      withRawFilePath absPath $ \absPath' -> withRawFilePath absTarget $ \absTarget' -> copyFile absTarget' absPath' Overwrite
+      let copy x y = copyFile x y Overwrite
+      withRawFilePath absPath $ \absPath' -> withRawFilePath absTarget $ \absTarget' -> case (absTarget', absPath') of
+                                                                                             (Right x, Right y) -> copy x y
+                                                                                             (Left x, Right y)  -> copy x y
+                                                                                             (Right x, Left y)  -> copy x y
+                                                                                             (Left x, Left y)   -> copy x y
 
 setModTime :: RawFilePath -> EpochTime -> IO ()
-setModTime path t = withRawFilePath path $ \p -> do
-  setModificationTime p (fromIntegral t)
-    `Exception.catch` \e ->
-      if isPermissionError e then return () else throwIO e
+setModTime path t = withRawFilePath path $ \p -> either go go p
+  where
+    go p = setModificationTime p (fromIntegral t)
+            `Exception.catch` \e ->
+              if isPermissionError e then return () else throwIO e

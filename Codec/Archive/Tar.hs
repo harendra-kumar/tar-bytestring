@@ -202,7 +202,10 @@ create :: RawFilePath   -- ^ Path of the \".tar\" file to write.
        -> [RawFilePath] -- ^ Files and directories to archive, relative to base dir
        -> IO ()
 create tar base paths =
-  withRawFilePath tar $ (\p -> writeFileL p (Just newFilePerms) . write =<< pack base paths)
+  withRawFilePath tar $ (\p -> either go go p)
+
+  where
+    go p = writeFileL p (Just newFilePerms) . write =<< pack base paths
 
 -- | Extract all the files contained in a @\".tar\"@ file.
 --
@@ -235,7 +238,7 @@ create tar base paths =
 extract :: RawFilePath -- ^ Destination directory
         -> RawFilePath -- ^ Tarball
         -> IO ()
-extract dir tar = unpack dir . read =<< (withRawFilePath tar $ readFile)
+extract dir tar = unpack dir . read =<< (withRawFilePath tar $ either readFile readFile)
 
 -- | Append new entries to a @\".tar\"@ file from a directory of files.
 --

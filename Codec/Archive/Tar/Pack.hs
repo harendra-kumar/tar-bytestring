@@ -62,7 +62,7 @@ pack baseDir paths0 = preparePaths baseDir paths0 >>= packPaths baseDir
 preparePaths :: RawFilePath -> [RawFilePath] -> IO [RawFilePath]
 preparePaths baseDir paths =
   fmap concat $ interleave
-    [ do isDir  <- withRawFilePath (baseDir </> path) $ \p -> doesDirectoryExist p
+    [ do isDir  <- withRawFilePath (baseDir </> path) $ \p -> either doesDirectoryExist doesDirectoryExist p
          if isDir
            then do entries <- getDirectoryContentsRecursive (baseDir </> path)
                    let entries' = map (path </>) entries
@@ -104,7 +104,7 @@ packFileEntry :: RawFilePath -- ^ Full path to find the file on the local disk
               -> IO Entry
 packFileEntry filepath tarpath = do
   mtime   <- getModTime filepath
-  executable   <- withRawFilePath filepath $ isExecutable
+  executable   <- withRawFilePath filepath $ either isExecutable isExecutable
   file    <- openFd filepath SPI.ReadOnly [] Nothing >>= SPI.fdToHandle
   size    <- hFileSize file
   content <- L.hGetContents file
@@ -151,7 +151,7 @@ getDirectoryContentsRecursive dir0 =
 recurseDirectories :: RawFilePath -> [RawFilePath] -> IO [RawFilePath]
 recurseDirectories _    []         = return []
 recurseDirectories base (dir:dirs) = unsafeInterleaveIO $ do
-  (files, dirs') <- collect [] [] =<< ((fmap . fmap) toFilePath $ (withRawFilePath (base </> dir) $ getDirsFiles'))
+  (files, dirs') <- collect [] [] =<< ((fmap . fmap) toFilePath $ (withRawFilePath (base </> dir) $ either getDirsFiles' getDirsFiles'))
 
   files' <- recurseDirectories base (dirs' ++ dirs)
   return (dir : files ++ files')
@@ -163,7 +163,7 @@ recurseDirectories base (dir:dirs) = unsafeInterleaveIO $ do
     collect files dirs' (entry:entries) = do
       let dirEntry  = dir </> entry
           dirEntry' = FilePath.Posix.addTrailingPathSeparator dirEntry
-      isDirectory <- withRawFilePath (base </> dirEntry) $ doesDirectoryExist
+      isDirectory <- withRawFilePath (base </> dirEntry) $ either doesDirectoryExist doesDirectoryExist
       if isDirectory
         then collect files (dirEntry':dirs') entries
         else collect (dirEntry:files) dirs' entries
@@ -171,5 +171,5 @@ recurseDirectories base (dir:dirs) = unsafeInterleaveIO $ do
 
 getModTime :: RawFilePath -> IO EpochTime
 getModTime path = do
-  t <- withRawFilePath path $ getModificationTime
+  t <- withRawFilePath path $ either getModificationTime getModificationTime
   return . floor . utcTimeToPOSIXSeconds $ t
