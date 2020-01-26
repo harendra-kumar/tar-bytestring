@@ -1,5 +1,14 @@
 See also http://pvp.haskell.org/faq
 
+0.6.1.1
+
+  * Use hpath-directory instead of hpath-io for a more lightweight dependency
+  * use safe-exceptions
+
+0.6.1.0
+
+  * Use ByteString based filepaths to not break unicode
+
 0.6.0.0 *TODO*
 
   * Add offending path as new field to `TarBombError` constructor
