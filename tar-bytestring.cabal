@@ -42,7 +42,7 @@ library
                  bytestring       >= 0.10,
                  array                         < 0.6,
                  time             >= 1.8,
-                 containers       >= 0.2    && < 0.6,
+                 containers       >= 0.2    && < 0.7,
                  deepseq          >= 1.1    && < 1.5,
                  hpath-io         >= 0.12.0 && < 0.13,
                  hpath            >= 0.11.0 && < 0.12,
