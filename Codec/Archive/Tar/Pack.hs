@@ -28,8 +28,7 @@ import System.Posix.FD
 import System.Posix.ByteString.FilePath (RawFilePath)
 import qualified System.Posix.FilePath as FilePath.Posix
 import System.Posix.FilePath ( (</>), isSpecialDirectoryEntry )
-import HPath (toFilePath)
-import HPath.IO
+import System.Posix.RawFilePath.Directory
 import Data.Time.Clock
          ( UTCTime )
 import Data.Time.Clock.POSIX
@@ -62,7 +61,7 @@ pack baseDir paths0 = preparePaths baseDir paths0 >>= packPaths baseDir
 preparePaths :: RawFilePath -> [RawFilePath] -> IO [RawFilePath]
 preparePaths baseDir paths =
   fmap concat $ interleave
-    [ do isDir  <- withRawFilePath (baseDir </> path) $ \p -> either doesDirectoryExist doesDirectoryExist p
+    [ do isDir  <- doesDirectoryExist (baseDir </> path)
          if isDir
            then do entries <- getDirectoryContentsRecursive (baseDir </> path)
                    let entries' = map (path </>) entries
@@ -104,7 +103,7 @@ packFileEntry :: RawFilePath -- ^ Full path to find the file on the local disk
               -> IO Entry
 packFileEntry filepath tarpath = do
   mtime   <- getModTime filepath
-  executable   <- withRawFilePath filepath $ either isExecutable isExecutable
+  executable   <- isExecutable filepath
   file    <- openFd filepath SPI.ReadOnly [] Nothing >>= SPI.fdToHandle
   size    <- hFileSize file
   content <- L.hGetContents file
@@ -151,7 +150,7 @@ getDirectoryContentsRecursive dir0 =
 recurseDirectories :: RawFilePath -> [RawFilePath] -> IO [RawFilePath]
 recurseDirectories _    []         = return []
 recurseDirectories base (dir:dirs) = unsafeInterleaveIO $ do
-  (files, dirs') <- collect [] [] =<< ((fmap . fmap) toFilePath $ (withRawFilePath (base </> dir) $ either getDirsFiles' getDirsFiles'))
+  (files, dirs') <- collect [] [] =<< (getDirsFiles' (base </> dir))
 
   files' <- recurseDirectories base (dirs' ++ dirs)
   return (dir : files ++ files')
@@ -163,7 +162,7 @@ recurseDirectories base (dir:dirs) = unsafeInterleaveIO $ do
     collect files dirs' (entry:entries) = do
       let dirEntry  = dir </> entry
           dirEntry' = FilePath.Posix.addTrailingPathSeparator dirEntry
-      isDirectory <- withRawFilePath (base </> dirEntry) $ either doesDirectoryExist doesDirectoryExist
+      isDirectory <- doesDirectoryExist (base </> dirEntry)
       if isDirectory
         then collect files (dirEntry':dirs') entries
         else collect (dirEntry:files) dirs' entries
@@ -171,5 +170,5 @@ recurseDirectories base (dir:dirs) = unsafeInterleaveIO $ do
 
 getModTime :: RawFilePath -> IO EpochTime
 getModTime path = do
-  t <- withRawFilePath path $ either getModificationTime getModificationTime
+  t <- getModificationTime path
   return . floor . utcTimeToPOSIXSeconds $ t

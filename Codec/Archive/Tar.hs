@@ -159,12 +159,16 @@ import Codec.Archive.Tar.Index (hSeekEndEntryOffset)
 
 import Codec.Archive.Tar.Check
 
-import Control.Exception (Exception, throw, catch)
+import Control.Exception (Exception, throw, catch, throwIO, finally, bracketOnError)
 import qualified Data.ByteString.Lazy as BS
-import System.IO (withFile, IOMode(..))
+import System.IO (hClose, withFile, IOMode(..))
 import Prelude hiding (read, readFile)
-import HPath.IO
+import System.Posix.RawFilePath.Directory
 import System.Posix.IO (OpenMode(..))
+import qualified System.Posix.IO.ByteString as SPI
+import           System.Posix.FD                ( openFd )
+import System.Posix.RawFilePath.Directory.Errors
+
 
 -- | Create a new @\".tar\"@ file from a directory of files.
 --
@@ -202,10 +206,7 @@ create :: RawFilePath   -- ^ Path of the \".tar\" file to write.
        -> [RawFilePath] -- ^ Files and directories to archive, relative to base dir
        -> IO ()
 create tar base paths =
-  withRawFilePath tar $ (\p -> either go go p)
-
-  where
-    go p = writeFileL p (Just newFilePerms) . write =<< pack base paths
+    writeFileL tar (Just newFilePerms) . write =<< pack base paths
 
 -- | Extract all the files contained in a @\".tar\"@ file.
 --
@@ -238,7 +239,7 @@ create tar base paths =
 extract :: RawFilePath -- ^ Destination directory
         -> RawFilePath -- ^ Tarball
         -> IO ()
-extract dir tar = unpack dir . read =<< (withRawFilePath tar $ either readFile readFile)
+extract dir tar = unpack dir . read =<< (readFile tar)
 
 -- | Append new entries to a @\".tar\"@ file from a directory of files.
 --
@@ -250,10 +251,16 @@ append :: RawFilePath   -- ^ Path of the \".tar\" file to write.
        -> RawFilePath   -- ^ Base directory
        -> [RawFilePath] -- ^ Files and directories to archive, relative to base dir
        -> IO ()
-append tar base paths =
-  withHandle tar ReadWrite $ \(hnd, _) -> do
-      _ <- hSeekEndEntryOffset hnd Nothing
-      BS.hPut hnd . write =<< pack base paths
+append tar base paths = do
+  handle <-
+    bracketOnError (openFd tar ReadWrite [] (Just newFilePerms)) (SPI.closeFd)
+      $ SPI.fdToHandle
+  finally (action handle) (hClose handle)
+
+  where
+    action handle = do
+      _ <- hSeekEndEntryOffset handle Nothing
+      BS.hPut handle . write =<< pack base paths
 
 -------------------------
 -- Correctness properties
