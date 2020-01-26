@@ -46,6 +46,7 @@ library
                  deepseq          >= 1.1    && < 1.5,
                  hpath-directory  >= 0.13   && < 0.14,
                  hpath-filepath   >= 0.10.2 && < 0.11,
+                 safe-exceptions  >= 0.1,
                  unix,
                  word8
 
@@ -94,6 +95,7 @@ test-suite properties
                  tasty-quickcheck >= 0.8,
                  hpath-directory  >= 0.13.0 && < 0.14,
                  hpath-filepath   >= 0.10.2 && < 0.11,
+                 safe-exceptions  >= 0.1,
                  unix,
                  word8
 
@@ -145,6 +147,7 @@ benchmark bench
                  criterion        >= 1.0,
                  hpath-directory  >= 0.13   && < 0.14,
                  hpath-filepath   >= 0.10.2 && < 0.11,
+                 safe-exceptions  >= 0.1,
                  unix,
                  word8
 

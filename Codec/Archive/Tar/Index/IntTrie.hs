@@ -56,7 +56,7 @@ import Data.ByteString.Builder          as BS
 #else
 import Data.ByteString.Lazy.Builder     as BS
 #endif
-import Control.Exception (assert)
+import Control.Exception.Safe (assert)
 #if MIN_VERSION_containers(0,5,0)
 import qualified Data.Map.Strict        as Map
 import qualified Data.IntMap.Strict     as IntMap

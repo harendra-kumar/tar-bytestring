@@ -106,7 +106,7 @@ import Data.Bits
 import qualified Data.Array.Unboxed as A
 import Prelude hiding (lookup)
 import System.IO
-import Control.Exception (assert, throwIO)
+import Control.Exception.Safe (assert, throwIO)
 import Control.DeepSeq
 
 import qualified Data.ByteString        as BS
@@ -132,7 +132,7 @@ import Control.Monad (unless)
 import Data.List (nub, sort, sortBy, stripPrefix, isPrefixOf)
 import Data.Maybe
 import Data.Function (on)
-import Control.Exception (SomeException, try)
+import Control.Exception.Safe (SomeException, try)
 import Codec.Archive.Tar.Write          as Tar
 import qualified Data.ByteString.Handle as HBS
 #endif

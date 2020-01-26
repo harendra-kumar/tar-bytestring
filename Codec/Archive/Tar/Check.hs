@@ -31,7 +31,7 @@ module Codec.Archive.Tar.Check (
 import Codec.Archive.Tar.Types
 
 import Data.Typeable (Typeable)
-import Control.Exception (Exception)
+import Control.Exception.Safe (Exception)
 import Control.Monad (MonadPlus(mplus))
 import qualified System.Posix.FilePath as FilePath.Posix
 import qualified Data.ByteString as BS

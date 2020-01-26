@@ -159,7 +159,7 @@ import Codec.Archive.Tar.Index (hSeekEndEntryOffset)
 
 import Codec.Archive.Tar.Check
 
-import Control.Exception (Exception, throw, catch, throwIO, finally, bracketOnError)
+import Control.Exception.Safe (Exception, throw, catch, throwIO, finally, bracketOnError)
 import qualified Data.ByteString.Lazy as BS
 import System.IO (hClose, withFile, IOMode(..))
 import Prelude hiding (read, readFile)

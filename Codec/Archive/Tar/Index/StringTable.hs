@@ -40,7 +40,7 @@ import Data.Monoid (Monoid(..))
 #if (MIN_VERSION_base(4,5,0))
 import Data.Monoid ((<>))
 #endif
-import Control.Exception (assert)
+import Control.Exception.Safe (assert)
 
 import qualified Data.Array.Unboxed as A
 import           Data.Array.Unboxed ((!))

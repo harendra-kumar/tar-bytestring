@@ -24,13 +24,13 @@ import System.Posix.FilePath
          ( (</>) )
 import qualified System.Posix.FilePath as FilePath.Native
          ( takeDirectory )
-import           Control.Exception              ( Exception
-                                                , throwIO
-                                                , finally
-                                                )
+import           Control.Exception.Safe              ( Exception
+                                                     , throwIO
+                                                     , finally
+                                                     )
 import Data.Time.Clock.POSIX
          ( posixSecondsToUTCTime )
-import Control.Exception as Exception
+import Control.Exception.Safe as Exception
          ( catch )
 import System.IO.Error
          ( isPermissionError )
