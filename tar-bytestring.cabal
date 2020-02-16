@@ -147,8 +147,9 @@ benchmark bench
                  deepseq,
                  time,
                  criterion        >= 1.0,
-                 hpath-directory  >= 0.13   && < 0.14,
-                 hpath-filepath   >= 0.10.2 && < 0.11,
+                 hpath-directory  >= 0.13.1 && < 0.14,
+                 hpath-filepath   >= 0.10.4 && < 0.11,
+                 hpath-posix      >= 0.13.1 && < 0.14,
                  safe-exceptions  >= 0.1,
                  unix,
                  word8
