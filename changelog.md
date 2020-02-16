@@ -1,5 +1,9 @@
 See also http://pvp.haskell.org/faq
 
+0.6.1.2
+
+  * fix hpath dependencies
+
 0.6.1.1
 
   * Use hpath-directory instead of hpath-io for a more lightweight dependency
