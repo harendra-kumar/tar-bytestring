@@ -1,5 +1,9 @@
 See also http://pvp.haskell.org/faq
 
+0.6.1.3
+
+  * fix bug in 'unpack'
+
 0.6.1.2
 
   * fix hpath dependencies
