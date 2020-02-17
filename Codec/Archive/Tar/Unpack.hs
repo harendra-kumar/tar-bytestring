@@ -21,7 +21,7 @@ import Codec.Archive.Tar.Check
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
 import System.Posix.FilePath
-         ( (</>) )
+         ( (</>), normalise )
 import qualified System.Posix.FilePath as FilePath.Native
          ( takeDirectory )
 import           Control.Exception.Safe              ( Exception
@@ -90,7 +90,7 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
       -- Note that tar archives do not make sure each directory is created
       -- before files they contain, indeed we may have to create several
       -- levels of directory.
-      createDirRecursive newDirPerms absDir
+      createDirRecursive newDirPerms (normalise absDir)
       writeFileL absPath (Just newFilePerms) content
       setModTime absPath mtime
       where
@@ -98,7 +98,7 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
         absPath = baseDir </> path
 
     extractDir path mtime = do
-      createDirRecursive newDirPerms absPath
+      createDirRecursive newDirPerms (normalise absPath)
       setModTime absPath mtime
       where
         absPath = baseDir </> path
