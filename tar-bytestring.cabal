@@ -44,7 +44,7 @@ library
                  time             >= 1.8,
                  containers       >= 0.2    && < 0.7,
                  deepseq          >= 1.1    && < 1.5,
-                 hpath-directory  >= 0.13.1 && < 0.14,
+                 hpath-directory  >= 0.13.2 && < 0.14,
                  hpath-filepath   >= 0.10.4 && < 0.11,
                  hpath-posix      >= 0.13.1 && < 0.14,
                  safe-exceptions  >= 0.1,
