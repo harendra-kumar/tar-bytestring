@@ -75,7 +75,7 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
     unpackEntries _     (Fail err)      = either throwIO throwIO err
     unpackEntries links Done            = return links
     unpackEntries links (Next entry es) = case entryContent entry of
-      NormalFile file _ -> extractFile path file mtime
+      NormalFile file _ -> extractFile entry path file mtime
                         >> unpackEntries links es
       Directory         -> extractDir path mtime
                         >> unpackEntries links es
@@ -86,12 +86,12 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
         path  = entryPath entry
         mtime = entryTime entry
 
-    extractFile path content mtime = do
+    extractFile entry path content mtime = do
       -- Note that tar archives do not make sure each directory is created
       -- before files they contain, indeed we may have to create several
       -- levels of directory.
       createDirRecursive newDirPerms (normalise absDir)
-      writeFileL absPath (Just newFilePerms) content
+      writeFileL absPath (Just $ entryPermissions entry) content
       setModTime absPath mtime
       where
         absDir  = baseDir </> FilePath.Native.takeDirectory path
