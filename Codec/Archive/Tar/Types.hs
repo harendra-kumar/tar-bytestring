@@ -53,6 +53,9 @@ module Codec.Archive.Tar.Types (
   foldlEntries,
   unfoldEntries,
 
+  filePerms,
+  dirPerms,
+
 #ifdef TESTS
   limitToV7FormatCompat
 #endif
@@ -68,6 +71,7 @@ import Control.DeepSeq
 
 import System.Posix.ByteString.FilePath (RawFilePath)
 import qualified System.Posix.FilePath as FilePath.Posix
+import System.Posix.Files.ByteString
 import System.Posix.Types ( FileMode )
 
 #ifdef TESTS
@@ -110,6 +114,28 @@ data Entry = Entry {
     entryFormat :: !Format
   }
   deriving (Eq, Show)
+
+
+
+-- |Default permissions for tar regular files.
+filePerms :: FileMode
+filePerms =
+  ownerWriteMode
+    `unionFileModes` ownerReadMode
+    `unionFileModes` groupWriteMode
+    `unionFileModes` groupReadMode
+    `unionFileModes` otherWriteMode
+    `unionFileModes` otherReadMode
+
+
+-- |Default permissions for tar directory.
+dirPerms :: FileMode
+dirPerms =
+  ownerModes
+    `unionFileModes` groupModes
+    `unionFileModes` otherExecuteMode
+    `unionFileModes` otherReadMode
+
 
 -- | Native 'FilePath' of the file or directory within the archive.
 --

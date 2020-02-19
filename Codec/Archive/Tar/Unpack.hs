@@ -90,7 +90,7 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
       -- Note that tar archives do not make sure each directory is created
       -- before files they contain, indeed we may have to create several
       -- levels of directory.
-      createDirRecursive newDirPerms (normalise absDir)
+      createDirRecursive dirPerms (normalise absDir)
       writeFileL absPath (Just $ entryPermissions entry) content
       setModTime absPath mtime
       where
@@ -98,7 +98,7 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
         absPath = baseDir </> path
 
     extractDir path mtime = do
-      createDirRecursive newDirPerms (normalise absPath)
+      createDirRecursive dirPerms (normalise absPath)
       setModTime absPath mtime
       where
         absPath = baseDir </> path

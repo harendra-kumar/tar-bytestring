@@ -206,7 +206,7 @@ create :: RawFilePath   -- ^ Path of the \".tar\" file to write.
        -> [RawFilePath] -- ^ Files and directories to archive, relative to base dir
        -> IO ()
 create tar base paths =
-    writeFileL tar (Just newFilePerms) . write =<< pack base paths
+    writeFileL tar (Just filePerms) . write =<< pack base paths
 
 -- | Extract all the files contained in a @\".tar\"@ file.
 --
@@ -253,7 +253,7 @@ append :: RawFilePath   -- ^ Path of the \".tar\" file to write.
        -> IO ()
 append tar base paths = do
   handle <-
-    bracketOnError (openFd tar ReadWrite [] (Just newFilePerms)) (SPI.closeFd)
+    bracketOnError (openFd tar ReadWrite [] (Just filePerms)) (SPI.closeFd)
       $ SPI.fdToHandle
   finally (action handle) (hClose handle)
 
