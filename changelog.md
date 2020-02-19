@@ -1,5 +1,10 @@
 See also http://pvp.haskell.org/faq
 
+0.6.2.0
+
+  * fix executable bit: https://github.com/haskell/tar/issues/25
+  * fix default permissions for directories (also set write for group)
+
 0.6.1.3
 
   * fix bug in 'unpack'

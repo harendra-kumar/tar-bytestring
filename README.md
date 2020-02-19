@@ -3,4 +3,5 @@ The `tar-bytestring` Package  [![Hackage](https://img.shields.io/hackage/v/tar-b
 
 See [`tar-bytestring` on Hackage](https://hackage.haskell.org/package/tar-bytestring) for more information.
 
-This was forked, because `tar` breaks unicode filepaths: https://github.com/haskell/tar/issues/6
+This was forked, because `tar` breaks unicode filepaths: https://github.com/haskell/tar/issues/6 and
+doesn't handle executable bit properly: https://github.com/haskell/tar/issues/25
