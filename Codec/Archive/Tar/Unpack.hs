@@ -91,7 +91,7 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
                HardLink     link -> (unpackEntries $! saveLink path link links) es'
                SymbolicLink link -> (unpackEntries $! saveLink path link links) es'
                OtherEntryType 'L' _ _ -> throwIO $ userError "Two subsequent OtherEntryType 'L'"
-               _ -> unpackEntries links es
+               _ -> unpackEntries links es'
              (Fail err)      -> either throwIO throwIO err
              Done            -> throwIO $ userError "././@LongLink without a subsequent entry"
       _ -> unpackEntries links es --ignore other file types
