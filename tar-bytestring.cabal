@@ -48,6 +48,7 @@ library
                  hpath-filepath   >= 0.10.4 && < 0.11,
                  hpath-posix      >= 0.13.1 && < 0.14,
                  safe-exceptions  >= 0.1,
+                 these            >= 1.0.1,
                  unix,
                  word8
 
@@ -98,6 +99,7 @@ test-suite properties
                  hpath-filepath   >= 0.10.4 && < 0.11,
                  hpath-posix      >= 0.13.1 && < 0.14,
                  safe-exceptions  >= 0.1,
+                 these            >= 1.0.1,
                  unix,
                  word8
 
@@ -151,6 +153,7 @@ benchmark bench
                  hpath-filepath   >= 0.10.4 && < 0.11,
                  hpath-posix      >= 0.13.1 && < 0.14,
                  safe-exceptions  >= 0.1,
+                 these            >= 1.0.1,
                  unix,
                  word8
 

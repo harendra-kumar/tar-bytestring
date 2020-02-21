@@ -29,6 +29,7 @@ module Codec.Archive.Tar.Types (
   RawFilePath,
 
   simpleEntry,
+  longLinkEntry,
   fileEntry,
   directoryEntry,
 
@@ -37,6 +38,7 @@ module Codec.Archive.Tar.Types (
   directoryPermissions,
 
   TarPath(..),
+  SplitError(..),
   toTarPath,
   fromTarPath,
   fromTarPathToPosixPath,
@@ -64,6 +66,7 @@ module Codec.Archive.Tar.Types (
 import Data.Int      (Int64)
 import Data.Monoid   (Monoid(..))
 import Data.Semigroup as Sem
+import Data.These
 import qualified Data.ByteString       as BS
 import qualified Data.ByteString.Char8 as BS.Char8
 import qualified Data.ByteString.Lazy  as LBS
@@ -246,6 +249,22 @@ simpleEntry tarpath content = Entry {
     entryFormat      = UstarFormat
   }
 
+
+-- | Gnu entry for when a filepath is too long to be in entryTarPath.
+-- Gnu tar uses OtherEntryType 'L' then as the first Entry and puts path
+-- in the entryContent. The Next entry will then be the "original"
+-- entry with the entryTarPath truncated.
+longLinkEntry :: RawFilePath -> Entry
+longLinkEntry tarpath = Entry {
+    entryTarPath     = TarPath (BS.Char8.pack "././@LongLink") BS.empty,
+    entryContent     = OtherEntryType 'L' (LBS.fromStrict tarpath) (fromIntegral $ BS.length tarpath),
+    entryPermissions = ordinaryFilePermissions,
+    entryOwnership   = Ownership "" "" 0 0,
+    entryTime        = 0,
+    entryFormat      = GnuFormat
+  }
+
+
 -- | A tar 'Entry' for a file.
 --
 -- Entry  fields such as file permissions and ownership have default values.
@@ -349,7 +368,7 @@ fromTarPathToPosixPath (TarPath name prefix) = adjustDirectory $
 --
 toTarPath :: Bool -- ^ Is the path for a directory? This is needed because for
                   -- directories a 'TarPath' must always use a trailing @\/@.
-          -> RawFilePath -> Either String TarPath
+          -> RawFilePath -> These SplitError TarPath
 toTarPath isDir = splitLongPath
                 . addTrailingSep
                 . FilePath.Posix.joinPath
@@ -358,6 +377,11 @@ toTarPath isDir = splitLongPath
     addTrailingSep | isDir     = FilePath.Posix.addTrailingPathSeparator
                    | otherwise = id
 
+
+data SplitError = FileNameEmpty
+                | FileNameTooLong
+                deriving Show
+
 -- | Take a sanitised path, split on directory separators and try to pack it
 -- into the 155 + 100 tar file name format.
 --
@@ -365,15 +389,17 @@ toTarPath isDir = splitLongPath
 -- and try to fit as many components into the 100 long name area as possible.
 -- If all the remaining components fit in the 155 name area then we win.
 --
-splitLongPath :: RawFilePath -> Either String TarPath
+splitLongPath :: RawFilePath -> These SplitError TarPath
 splitLongPath path =
   case packName nameMax (reverse (FilePath.Posix.splitPath path)) of
-    Left err                 -> Left err
-    Right (name, [])         -> Right $! TarPath name BS.empty
+    Left FileNameTooLong     -> These FileNameTooLong $ TarPath (BS.take 100 path) BS.empty
+    Left e                   -> This e
+    Right (name, [])         -> That $! TarPath name BS.empty
     Right (name, first:rest) -> case packName prefixMax remainder of
-      Left err               -> Left err
-      Right (_     , (_:_))  -> Left "File name too long (cannot split)"
-      Right (prefix, [])     -> Right $! TarPath name prefix
+      Left FileNameTooLong   -> These FileNameTooLong $ TarPath (BS.take 100 path) BS.empty
+      Left e                 -> This e
+      Right (_     , (_:_))  -> These FileNameTooLong $ TarPath (BS.take 100 path) BS.empty
+      Right (prefix, [])     -> That $! TarPath name prefix
       where
         -- drop the '/' between the name and prefix:
         remainder = BS.init first : rest
@@ -383,9 +409,9 @@ splitLongPath path =
     nameMax   = 100
     prefixMax = 155
 
-    packName _      []     = Left "File name empty"
+    packName _      []     = Left FileNameEmpty
     packName maxLen (c:cs)
-      | n > maxLen         = Left "File name too long"
+      | n > maxLen         = Left FileNameTooLong
       | otherwise          = Right (packName' maxLen n [c] cs)
       where n = BS.length c
 
@@ -558,14 +584,14 @@ instance Arbitrary Entry where
       | perms' <- shrinkIntegral perms ]
 
 instance Arbitrary TarPath where
-  arbitrary = either error id
+  arbitrary = these (error . show) id (flip const)
             . toTarPath False
             . FilePath.Posix.joinPath
             . fmap BS.Char8.pack
           <$> listOf1ToN (255 `div` 5)
                          (elements (map (replicate 4) "abcd"))
 
-  shrink = map (either error id . toTarPath False)
+  shrink = map (these (error . show) id (flip const) . toTarPath False)
          . map FilePath.Posix.joinPath
          . filter (not . null)
          . shrinkList shrinkNothing

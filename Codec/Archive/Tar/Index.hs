@@ -124,6 +124,7 @@ import Data.ByteString.Lazy.Builder.Extras as BS (toLazyByteStringWith,
 #endif
 
 #ifdef TESTS
+import Data.These
 import qualified Prelude
 import Test.QuickCheck
 import Test.QuickCheck.Property (ioProperty)
@@ -710,7 +711,7 @@ example1 =
 testEntry :: RawFilePath -> Int64 -> Entry
 testEntry name size = simpleEntry path (NormalFile mempty size)
   where
-    Right path = toTarPath False name
+    That path = toTarPath False name
 
 -- | Simple tar archive containing regular files only
 data SimpleTarArchive = SimpleTarArchive {
@@ -775,7 +776,7 @@ instance Arbitrary SimpleTarArchive where
       mkList []            = []
       mkList ((fp, bs):es) = entry : mkList es
         where
-          Right path = toTarPath False fp
+          That path = toTarPath False fp
           entry   = simpleEntry path content
           content = NormalFile bs (LBS.length bs)
 

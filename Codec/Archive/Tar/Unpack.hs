@@ -75,23 +75,37 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
     unpackEntries _     (Fail err)      = either throwIO throwIO err
     unpackEntries links Done            = return links
     unpackEntries links (Next entry es) = case entryContent entry of
-      NormalFile file _ -> extractFile entry path file mtime
+      NormalFile file _ -> extractFile fPerms path file mtime
                         >> unpackEntries links es
       Directory         -> extractDir path mtime
                         >> unpackEntries links es
       HardLink     link -> (unpackEntries $! saveLink path link links) es
       SymbolicLink link -> (unpackEntries $! saveLink path link links) es
-      _                 -> unpackEntries links es --ignore other file types
+      OtherEntryType 'L' fn _ ->
+        case es of
+             (Next entry' es') -> case entryContent entry' of
+               NormalFile file _ -> extractFile fPerms (L.toStrict fn) file mtime
+                                 >> unpackEntries links es'
+               Directory         -> extractDir (L.toStrict fn) mtime
+                                 >> unpackEntries links es'
+               HardLink     link -> (unpackEntries $! saveLink path link links) es'
+               SymbolicLink link -> (unpackEntries $! saveLink path link links) es'
+               OtherEntryType 'L' _ _ -> throwIO $ userError "Two subsequent OtherEntryType 'L'"
+               _ -> unpackEntries links es
+             (Fail err)      -> either throwIO throwIO err
+             Done            -> throwIO $ userError "././@LongLink without a subsequent entry"
+      _ -> unpackEntries links es --ignore other file types
       where
         path  = entryPath entry
         mtime = entryTime entry
+        fPerms = entryPermissions entry
 
-    extractFile entry path content mtime = do
+    extractFile fPerms path content mtime = do
       -- Note that tar archives do not make sure each directory is created
       -- before files they contain, indeed we may have to create several
       -- levels of directory.
       createDirRecursive dirPerms (normalise absDir)
-      writeFileL absPath (Just $ entryPermissions entry) content
+      writeFileL absPath (Just fPerms) content
       setModTime absPath mtime
       where
         absDir  = baseDir </> FilePath.Native.takeDirectory path
