@@ -18,6 +18,7 @@ module Codec.Archive.Tar.Unpack (
 import Codec.Archive.Tar.Types
 import Codec.Archive.Tar.Check
 
+import Data.List (partition)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as L
 import System.Posix.FilePath
@@ -65,8 +66,12 @@ import System.IO (hClose)
 -- use 'checkSecurity' before 'checkTarbomb' or other checks.
 --
 unpack :: Exception e => RawFilePath -> Entries e -> IO ()
-unpack baseDir entries = unpackEntries [] (checkSecurity entries)
-                     >>= emulateLinks
+unpack baseDir entries = do
+  uEntries <- unpackEntries [] (checkSecurity entries)
+  let (hardlinks, symlinks) = partition (\(_, _, x) -> x) uEntries
+  -- emulate hardlinks first, in case a symlink points to it
+  emulateLinks hardlinks
+  emulateLinks symlinks
 
   where
     -- We're relying here on 'checkSecurity' to make sure we're not scribbling
@@ -79,8 +84,8 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
                         >> unpackEntries links es
       Directory         -> extractDir path mtime
                         >> unpackEntries links es
-      HardLink     link -> (unpackEntries $! saveLink path link links) es
-      SymbolicLink link -> (unpackEntries $! saveLink path link links) es
+      HardLink     link -> (unpackEntries $! saveLink True path link links) es
+      SymbolicLink link -> (unpackEntries $! saveLink False path link links) es
       OtherEntryType 'L' fn _ ->
         case es of
              (Next entry' es') -> case entryContent entry' of
@@ -88,8 +93,8 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
                                  >> unpackEntries links es'
                Directory         -> extractDir (L.toStrict fn) mtime
                                  >> unpackEntries links es'
-               HardLink     link -> (unpackEntries $! saveLink path link links) es'
-               SymbolicLink link -> (unpackEntries $! saveLink path link links) es'
+               HardLink     link -> (unpackEntries $! saveLink True path link links) es'
+               SymbolicLink link -> (unpackEntries $! saveLink False path link links) es'
                OtherEntryType 'L' _ _ -> throwIO $ userError "Two subsequent OtherEntryType 'L'"
                _ -> unpackEntries links es'
              (Fail err)      -> either throwIO throwIO err
@@ -117,15 +122,18 @@ unpack baseDir entries = unpackEntries [] (checkSecurity entries)
       where
         absPath = baseDir </> path
 
-    saveLink path link links = seq (BS.length path)
-                             $ seq (BS.length link')
-                             $ (path, link'):links
+    saveLink isHardLink path link links = seq (BS.length path)
+                                        $ seq (BS.length link')
+                                        $ (path, link', isHardLink):links
       where link' = fromLinkTarget link
 
-    emulateLinks = mapM_ $ \(relPath, relLinkTarget) -> do
-      let absPath = baseDir </> relPath
-          absTarget = FilePath.Native.takeDirectory absPath </> relLinkTarget
-      copyFile absTarget absPath Overwrite
+    emulateLinks = mapM_ $ \(relPath, relLinkTarget, isHardLink) ->
+      let absPath   = baseDir </> relPath
+          -- hard links link targets are always "absolute" paths in
+          -- the context of the tar root
+          absTarget = if isHardLink then baseDir </> relLinkTarget else FilePath.Native.takeDirectory absPath </> relLinkTarget
+      in copyFile absTarget absPath Overwrite
+
 
 setModTime :: RawFilePath -> EpochTime -> IO ()
 setModTime p t = setModificationTime p (fromIntegral t)
