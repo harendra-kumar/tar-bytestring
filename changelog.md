@@ -1,5 +1,9 @@
 See also http://pvp.haskell.org/faq
 
+0.6.3.0
+
+  * Fix unpacking of hard links
+
 0.6.2.0
 
   * fix executable bit: https://github.com/haskell/tar/issues/25
