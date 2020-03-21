@@ -1,5 +1,9 @@
 See also http://pvp.haskell.org/faq
 
+0.6.3.1
+
+  * Fix untar when links point to themselves
+
 0.6.3.0
 
   * Fix unpacking of hard links
