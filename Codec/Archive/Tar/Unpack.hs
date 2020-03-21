@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Codec.Archive.Tar
@@ -32,10 +33,12 @@ import           Control.Exception.Safe              ( Exception
 import Data.Time.Clock.POSIX
          ( posixSecondsToUTCTime )
 import Control.Exception.Safe as Exception
-         ( catch )
+         ( catch, handle, throw )
+import Control.Monad (when)
 import System.IO.Error
          ( isPermissionError )
 import System.Posix.RawFilePath.Directory hiding (Directory, SymbolicLink)
+import System.Posix.RawFilePath.Directory.Errors
 import qualified System.Posix.IO.ByteString as SPI
 import qualified System.Posix as Posix
 import System.Posix.FD
@@ -132,7 +135,10 @@ unpack baseDir entries = do
           -- hard links link targets are always "absolute" paths in
           -- the context of the tar root
           absTarget = if isHardLink then baseDir </> relLinkTarget else FilePath.Native.takeDirectory absPath </> relLinkTarget
-      in copyFile absTarget absPath Overwrite
+      -- some archives have broken recursive links
+      in handle (\(ex :: HPathIOException) ->
+                 when (not . isSameFile $ ex) $ throw ex)
+           $ copyFile absTarget absPath Overwrite
 
 
 setModTime :: RawFilePath -> EpochTime -> IO ()
