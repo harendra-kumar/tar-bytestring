@@ -1,5 +1,5 @@
 name:            tar-bytestring
-version:         0.6.3.1
+version:         0.6.3.2
 license:         BSD3
 license-file:    LICENSE
 author:          Duncan Coutts <duncan@community.haskell.org>

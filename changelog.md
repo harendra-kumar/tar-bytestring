@@ -1,5 +1,9 @@
 See also http://pvp.haskell.org/faq
 
+0.6.3.2
+
+  * Fix bugs in untar for entries with long filenames
+
 0.6.3.1
 
   * Fix untar when links point to themselves

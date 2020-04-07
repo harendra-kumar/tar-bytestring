@@ -83,30 +83,28 @@ unpack baseDir entries = do
     unpackEntries _     (Fail err)      = either throwIO throwIO err
     unpackEntries links Done            = return links
     unpackEntries links (Next entry es) = case entryContent entry of
-      NormalFile file _ -> extractFile fPerms path file mtime
+      NormalFile file _ -> do
+        extractFile (entryPermissions entry) (entryPath entry) file (entryTime entry)
+        unpackEntries links es
+      Directory         -> extractDir (entryPath entry) (entryTime entry)
                         >> unpackEntries links es
-      Directory         -> extractDir path mtime
-                        >> unpackEntries links es
-      HardLink     link -> (unpackEntries $! saveLink True path link links) es
-      SymbolicLink link -> (unpackEntries $! saveLink False path link links) es
+      HardLink     link -> (unpackEntries $! saveLink True (entryPath entry) link links) es
+      SymbolicLink link -> (unpackEntries $! saveLink False (entryPath entry) link links) es
       OtherEntryType 'L' fn _ ->
         case es of
              (Next entry' es') -> case entryContent entry' of
-               NormalFile file _ -> extractFile fPerms (L.toStrict fn) file mtime
+               NormalFile file _ -> do
+                extractFile (entryPermissions entry') (L.toStrict fn) file (entryTime entry')
+                unpackEntries links es'
+               Directory         -> extractDir (L.toStrict fn) (entryTime entry')
                                  >> unpackEntries links es'
-               Directory         -> extractDir (L.toStrict fn) mtime
-                                 >> unpackEntries links es'
-               HardLink     link -> (unpackEntries $! saveLink True path link links) es'
-               SymbolicLink link -> (unpackEntries $! saveLink False path link links) es'
+               HardLink     link -> (unpackEntries $! saveLink True (L.toStrict fn) link links) es'
+               SymbolicLink link -> (unpackEntries $! saveLink False (L.toStrict fn) link links) es'
                OtherEntryType 'L' _ _ -> throwIO $ userError "Two subsequent OtherEntryType 'L'"
                _ -> unpackEntries links es'
              (Fail err)      -> either throwIO throwIO err
              Done            -> throwIO $ userError "././@LongLink without a subsequent entry"
       _ -> unpackEntries links es --ignore other file types
-      where
-        path  = entryPath entry
-        mtime = entryTime entry
-        fPerms = entryPermissions entry
 
     extractFile fPerms path content mtime = do
       -- Note that tar archives do not make sure each directory is created
