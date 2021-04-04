@@ -33,9 +33,11 @@ module Codec.Archive.Tar.Types (
   simpleEntry,
   longLinkEntry,
   fileEntry,
+  symlinkEntry,
   directoryEntry,
 
   ordinaryFilePermissions,
+  symbolicLinkPermission,
   executableFilePermissions,
   directoryPermissions,
 
@@ -204,6 +206,10 @@ instance NFData Ownership where
 ordinaryFilePermissions :: Permissions
 ordinaryFilePermissions   = 0o0644
 
+-- | @rw-r--r--@ for normal files
+symbolicLinkPermission :: Permissions
+symbolicLinkPermission   = 0o0777
+
 -- | @rwxr-xr-x@ for executable files
 executableFilePermissions :: Permissions
 executableFilePermissions = 0o0755
@@ -225,6 +231,7 @@ simpleEntry tarpath content = Entry {
     entryContent     = content,
     entryPermissions = case content of
                          Directory -> directoryPermissions
+                         SymbolicLink _ -> symbolicLinkPermission
                          _         -> ordinaryFilePermissions,
     entryOwnership   = Ownership "" "" 0 0,
     entryTime        = 0,
@@ -243,6 +250,12 @@ simpleEntry tarpath content = Entry {
 fileEntry :: TarPath -> LBS.ByteString -> Entry
 fileEntry name fileContent =
   simpleEntry name (NormalFile fileContent (LBS.length fileContent))
+
+
+-- | A tar 'Entry' for a symbolic link.
+symlinkEntry :: TarPath -> FilePath -> Entry
+symlinkEntry name targetLink =
+  simpleEntry name (SymbolicLink . LinkTarget . BS.Char8.pack $ targetLink)
 
 
 -- | Gnu entry for when a filepath is too long to be in entryTarPath.
