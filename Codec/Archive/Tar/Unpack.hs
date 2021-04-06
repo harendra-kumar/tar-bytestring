@@ -15,6 +15,7 @@
 -----------------------------------------------------------------------------
 module Codec.Archive.Tar.Unpack (
   unpack,
+  unpack',
   ) where
 
 import Codec.Archive.Tar.Types
@@ -50,32 +51,41 @@ import System.IO.Error
 import System.Directory
          ( createDirectoryLink, createFileLink )
 #endif
+import qualified Streamly.Internal.FileSystem.File as File
+import Streamly
+import Streamly.Prelude (cons, consM)
+import Control.Monad.Trans.Except
+import Control.Monad.IO.Class (liftIO)
 
+unpack' :: FilePath -> SerialT (ExceptT FormatError IO) Entry -> SerialT (ExceptT FormatError IO) ()
+unpack' baseDir stream = do
+  stream >>= \e -> unpackEntry e
 
--- | Create local files and directories based on the entries of a tar archive.
---
--- This is a portable implementation of unpacking suitable for portable
--- archives. It handles 'NormalFile' and 'Directory' entries and has simulated
--- support for 'SymbolicLink' and 'HardLink' entries. Links are implemented by
--- copying the target file. This therefore works on Windows as well as Unix.
--- All other entry types are ignored, that is they are not unpacked and no
--- exception is raised.
---
--- If the 'Entries' ends in an error then it is raised an an exception. Any
--- files or directories that have been unpacked before the error was
--- encountered will not be deleted. For this reason you may want to unpack
--- into an empty directory so that you can easily clean up if unpacking fails
--- part-way.
---
--- On its own, this function only checks for security (using 'checkSecurity').
--- You can do other checks by applying checking functions to the 'Entries' that
--- you pass to this function. For example:
---
--- > unpack dir (checkTarbomb expectedDir entries)
---
--- If you care about the priority of the reported errors then you may want to
--- use 'checkSecurity' before 'checkTarbomb' or other checks.
---
+  where
+    unpackEntry entry@(Entry { entryContent = (NormalFileS file _)}) =
+        liftIO $ extractFile' (entryPath entry) file (entryTime entry)
+    unpackEntry entry@(Entry { entryContent = Directory}) =
+        liftIO $ extractDir (entryPath entry) (entryTime entry)
+    -- unpackEntry entry@(Entry { entryContent = (HardLink link)}) =
+        -- (unpackEntries $! saveLink True (entryPath entry) link links) es
+    -- unpackEntry entry@(Entry { entryContent = (SymbolicLink link)}) =
+        -- (unpackEntries $! saveLink False (entryPath entry) link links) es
+    unpackEntry _ = pure ()
+
+    extractFile' path content mtime = do
+      createDirectoryIfMissing True absDir
+      -- File.fromBytes absPath content
+      -- setModTime absPath mtime
+      where
+        absDir  = baseDir </> FilePath.Native.takeDirectory path
+        absPath = baseDir </> path
+
+    extractDir path mtime = do
+      createDirectoryIfMissing True absPath
+      setModTime absPath mtime
+      where
+        absPath = baseDir </> path
+
 unpack :: Exception e => FilePath -> Entries e -> IO ()
 unpack baseDir entries = do
   uEntries <- unpackEntries [] (checkSecurity entries)
@@ -93,6 +103,9 @@ unpack baseDir entries = do
     unpackEntries links (Next entry es) = case entryContent entry of
       NormalFile file _ -> do
         extractFile (entryPath entry) file (entryTime entry)
+        unpackEntries links es
+      NormalFileS file _ -> do
+        extractFile' (entryPath entry) file (entryTime entry)
         unpackEntries links es
       Directory         -> extractDir (entryPath entry) (entryTime entry)
                         >> unpackEntries links es
@@ -118,8 +131,22 @@ unpack baseDir entries = do
       -- Note that tar archives do not make sure each directory is created
       -- before files they contain, indeed we may have to create several
       -- levels of directory.
+      -- if (path == "ghc-8.4.1/compiler/stage2/build/libHSghc-8.4.1_p.a"
+        -- || path == "ghc-8.4.1/compiler/stage2/build/libHSghc-8.4.1.a"
+        -- || path == "ghc-8.4.1/libraries/Cabal/Cabal/dist-install/build/libHSCabal-2.2.0.0_p.a"
+        -- )
+      -- then pure ()
+      -- else do
       createDirectoryIfMissing True absDir
       BS.writeFile absPath content
+      setModTime absPath mtime
+      where
+        absDir  = baseDir </> FilePath.Native.takeDirectory path
+        absPath = baseDir </> path
+
+    extractFile' path content mtime = do
+      createDirectoryIfMissing True absDir
+      File.fromBytes absPath content
       setModTime absPath mtime
       where
         absDir  = baseDir </> FilePath.Native.takeDirectory path

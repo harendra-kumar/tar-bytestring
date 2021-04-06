@@ -99,6 +99,7 @@ module Codec.Archive.Tar (
   -- This is because 'read' accepts common format variations while 'write'
   -- produces the standard format.
   read,
+  read',
   write,
 
   -- * Packing and unpacking files to\/from internal representation
@@ -108,6 +109,7 @@ module Codec.Archive.Tar (
   -- device files.
   pack,
   unpack,
+  unpack',
 
   -- * Types
   -- ** Tar entry type

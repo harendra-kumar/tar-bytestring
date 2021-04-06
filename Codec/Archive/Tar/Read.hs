@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, DeriveDataTypeable, BangPatterns #-}
+{-# LANGUAGE CPP, DeriveDataTypeable, BangPatterns, MultiWayIf #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Codec.Archive.Tar.Read
@@ -12,7 +12,7 @@
 -- Portability :  portable
 --
 -----------------------------------------------------------------------------
-module Codec.Archive.Tar.Read (read, FormatError(..)) where
+module Codec.Archive.Tar.Read (read, read', FormatError(..)) where
 
 import Codec.Archive.Tar.Types
 
@@ -23,60 +23,32 @@ import Control.Exception (Exception(..))
 import Data.Typeable (Typeable)
 import Control.Applicative
 import Control.Monad
+import Control.Monad.Trans.Except
+import Control.Monad.IO.Class (liftIO)
 import Control.DeepSeq
+import Streamly
+import Streamly.Prelude (cons, consM)
 
 import qualified Data.ByteString        as BS
 import qualified Data.ByteString.Char8  as BS.Char8
 import qualified Data.ByteString.Unsafe as BS
 import qualified Data.ByteString.Lazy   as LBS
+import qualified Streamly.Prelude as S
+import qualified Streamly.FileSystem.Handle    as FH
+import qualified Streamly.Internal.Data.Unfold as SU
+import qualified Streamly.Internal.FileSystem.Handle as IFH
+import qualified Streamly.Internal.Memory.ArrayStream as AS
+import qualified Streamly.Memory.Array as MA
 
 import Prelude hiding (read)
+import Data.Word (Word8)
 
 #if !MIN_VERSION_bytestring(0,10,0)
 import Data.Monoid (Monoid(..))
 import qualified Data.ByteString.Lazy.Internal as LBS
 #endif
 
--- | Errors that can be encountered when parsing a Tar archive.
-data FormatError
-  = TruncatedArchive
-  | ShortTrailer
-  | BadTrailer
-  | TrailingJunk
-  | ChecksumIncorrect
-  | NotTarFormat
-  | UnrecognisedTarFormat
-  | HeaderBadNumericEncoding
-#if MIN_VERSION_base(4,8,0)
-  deriving (Eq, Show, Typeable)
 
-instance Exception FormatError where
-  displayException TruncatedArchive         = "truncated tar archive"
-  displayException ShortTrailer             = "short tar trailer"
-  displayException BadTrailer               = "bad tar trailer"
-  displayException TrailingJunk             = "tar file has trailing junk"
-  displayException ChecksumIncorrect        = "tar checksum error"
-  displayException NotTarFormat             = "data is not in tar format"
-  displayException UnrecognisedTarFormat    = "tar entry not in a recognised format"
-  displayException HeaderBadNumericEncoding = "tar header is malformed (bad numeric encoding)"
-#else
-  deriving (Eq, Typeable)
-
-instance Show FormatError where
-  show TruncatedArchive         = "truncated tar archive"
-  show ShortTrailer             = "short tar trailer"
-  show BadTrailer               = "bad tar trailer"
-  show TrailingJunk             = "tar file has trailing junk"
-  show ChecksumIncorrect        = "tar checksum error"
-  show NotTarFormat             = "data is not in tar format"
-  show UnrecognisedTarFormat    = "tar entry not in a recognised format"
-  show HeaderBadNumericEncoding = "tar header is malformed (bad numeric encoding)"
-
-instance Exception FormatError
-#endif
-
-instance NFData    FormatError where
-  rnf !_ = () -- enumerations are fully strict by construction
 
 -- | Convert a data stream in the tar file format into an internal data
 -- structure. Decoding errors are reported by the 'Fail' constructor of the
@@ -86,6 +58,99 @@ instance NFData    FormatError where
 --
 read :: LBS.ByteString -> Entries FormatError
 read = unfoldEntries getEntry
+
+read' :: SerialT IO Word8 -> SerialT (ExceptT FormatError IO) Entry
+read' = S.unfoldrM getEntry'
+
+-- unfoldrM :: (IsStream t, MonadAsync m) => (b -> m (Maybe (a, b))) -> b -> t m a 
+
+getEntry' :: SerialT IO Word8
+          -> ExceptT FormatError IO (Maybe (Entry, SerialT IO Word8))
+getEntry' stream = do
+  liftIO $ putStrLn $ "start"
+  header <- fmap BS.pack $ liftIO $ S.toList $ S.take 512 stream
+
+  let name       = getString   0 100 header
+      mode_      = partial $ getOct    100   8 header
+      uid_       = partial $ getOct    108   8 header
+      gid_       = partial $ getOct    116   8 header
+      size_      = partial $ getOct    124  12 header
+      mtime_     = partial $ getOct    136  12 header
+      chksum_    = partial $ getOct    148   8 header
+      typecode   = getByte   156     header
+      linkname   = getString 157 100 header
+      magic      = getChars  257   8 header
+      uname      = getString 265  32 header
+      gname      = getString 297  32 header
+      devmajor_  = partial $ getOct    329   8 header
+      devminor_  = partial $ getOct    337   8 header
+      prefix     = getString 345 155 header
+      format_
+        | magic == ustarMagic = Right UstarFormat
+        | magic == gnuMagic   = Right GnuFormat
+        | magic == v7Magic    = Right V7Format
+        | otherwise           = Left UnrecognisedTarFormat
+
+
+  liftIO $ putStrLn $ "mid"
+  head' <- liftIO $ S.head stream
+  when (BS.length header < 512) $ throwE TruncatedArchive
+  if | head' == Just 0 -> do
+        let (end, trailing) = splitAt' 1024 stream
+        liftIO (S.length end) >>= \lEnd -> when (lEnd /= 1024) $ throwE ShortTrailer
+        -- liftIO (S.all (== 0) end) >>= \b -> when (not b) $ throwE BadTrailer
+        -- liftIO (S.all (== 0) trailing) >>= \b -> when (not b) $ throwE TrailingJunk
+        pure Nothing
+     | otherwise -> do
+        case (chksum_, format_) of
+          (Right chksum, _   ) | correctChecksum header chksum -> return ()
+          (Right _,   Right _) -> throwE ChecksumIncorrect
+          _                    -> throwE NotTarFormat
+
+        -- These fields are partial, have to check them
+        format   <- except format_;   mode     <- except mode_;
+        uid      <- except uid_;      gid      <- except gid_;
+        size     <- except size_;     mtime    <- except mtime_;
+        devmajor <- except devmajor_; devminor <- except devminor_;
+
+        liftIO $ putStrLn $ show (TarPath name prefix)
+
+        let content = S.take (fromIntegral size) (S.drop 512 stream)
+            padding = (512 - size) `mod` 512
+            restStream = S.drop (512 + size + padding) stream
+
+
+            entry = Entry {
+              entryTarPath     = TarPath name prefix,
+              entryContent     = case typecode of
+                         '\0' -> NormalFileS      content (fromIntegral size)
+                         '0'  -> NormalFileS      content (fromIntegral size)
+                         '1'  -> HardLink        (LinkTarget linkname)
+                         '2'  -> SymbolicLink    (LinkTarget linkname)
+                         _ | format == V7Format
+                              -> OtherEntryTypeS  typecode content (fromIntegral size)
+                         '3'  -> CharacterDevice devmajor devminor
+                         '4'  -> BlockDevice     devmajor devminor
+                         '5'  -> Directory
+                         '6'  -> NamedPipe
+                         '7'  -> NormalFileS      content (fromIntegral size)
+                         _    -> OtherEntryTypeS  typecode content (fromIntegral size),
+              entryPermissions = mode,
+              entryOwnership   = Ownership (BS.Char8.unpack uname)
+                                           (BS.Char8.unpack gname) uid gid,
+              entryTime        = mtime,
+              entryFormat      = format
+          }
+
+        return (Just (entry, restStream))
+  where
+    splitAt' :: (Monad m, IsStream t) => Int -> t m a -> (t m a, t m a)
+    splitAt' i s =
+      let head' = S.take i s
+          tail' = S.drop i s
+      in (head', tail')
+{-# NOINLINE getEntry' #-}
+
 
 getEntry :: LBS.ByteString -> Either FormatError (Maybe (Entry, LBS.ByteString))
 getEntry bs

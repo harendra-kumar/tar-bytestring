@@ -1,4 +1,4 @@
-{-# LANGUAGE CPP, GeneralizedNewtypeDeriving, BangPatterns #-}
+{-# LANGUAGE CPP, LambdaCase, GeneralizedNewtypeDeriving, BangPatterns #-}
 -----------------------------------------------------------------------------
 -- |
 -- Module      :  Codec.Archive.Tar.Types
@@ -28,6 +28,7 @@ module Codec.Archive.Tar.Types (
   DevMinor,
   Format(..),
   These(..),
+  FormatError(..),
   these,
 
   simpleEntry,
@@ -60,6 +61,7 @@ module Codec.Archive.Tar.Types (
   foldEntries,
   foldlEntries,
   unfoldEntries,
+  unfoldEntriesM,
 
 #ifdef TESTS
   limitToV7FormatCompat
@@ -69,9 +71,11 @@ module Codec.Archive.Tar.Types (
 import Data.Int      (Int64)
 import Data.Monoid   (Monoid(..))
 import Data.Semigroup as Sem
+import Streamly
 import qualified Data.ByteString       as BS
 import qualified Data.ByteString.Char8 as BS.Char8
 import qualified Data.ByteString.Lazy  as LBS
+import qualified Streamly.Memory.Array as MA
 import Control.DeepSeq
 
 import qualified System.FilePath as FilePath.Native
@@ -84,11 +88,14 @@ import qualified System.FilePath.Windows as FilePath.Windows
 import System.Posix.Types
          ( FileMode )
 
+import Data.Word (Word8)
 #ifdef TESTS
 import Test.QuickCheck
 import Control.Applicative ((<$>), (<*>), pure)
 import Data.Word (Word16)
 #endif
+import Data.Data (Typeable(..))
+import Control.Exception (Exception(..))
 
 type FileSize  = Int64
 -- | The number of seconds since the UNIX epoch
@@ -122,7 +129,6 @@ data Entry = Entry {
     -- | The tar format the archive is using.
     entryFormat :: !Format
   }
-  deriving (Eq, Show)
 
 -- | Native 'FilePath' of the file or directory within the archive.
 --
@@ -134,6 +140,7 @@ entryPath = fromTarPath . entryTarPath
 -- Portable archives should contain only 'NormalFile' and 'Directory'.
 --
 data EntryContent = NormalFile      LBS.ByteString {-# UNPACK #-} !FileSize
+                  | NormalFileS     (SerialT IO Word8) {-# UNPACK #-} !FileSize
                   | Directory
                   | SymbolicLink    !LinkTarget
                   | HardLink        !LinkTarget
@@ -144,7 +151,49 @@ data EntryContent = NormalFile      LBS.ByteString {-# UNPACK #-} !FileSize
                   | NamedPipe
                   | OtherEntryType  {-# UNPACK #-} !TypeCode LBS.ByteString
                                     {-# UNPACK #-} !FileSize
-    deriving (Eq, Ord, Show)
+                  | OtherEntryTypeS  {-# UNPACK #-} !TypeCode (SerialT IO Word8)
+                                    {-# UNPACK #-} !FileSize
+
+-- | Errors that can be encountered when parsing a Tar archive.
+data FormatError
+  = TruncatedArchive
+  | ShortTrailer
+  | BadTrailer
+  | TrailingJunk
+  | ChecksumIncorrect
+  | NotTarFormat
+  | UnrecognisedTarFormat
+  | HeaderBadNumericEncoding
+#if MIN_VERSION_base(4,8,0)
+  deriving (Eq, Show, Typeable)
+
+instance Exception FormatError where
+  displayException TruncatedArchive         = "truncated tar archive"
+  displayException ShortTrailer             = "short tar trailer"
+  displayException BadTrailer               = "bad tar trailer"
+  displayException TrailingJunk             = "tar file has trailing junk"
+  displayException ChecksumIncorrect        = "tar checksum error"
+  displayException NotTarFormat             = "data is not in tar format"
+  displayException UnrecognisedTarFormat    = "tar entry not in a recognised format"
+  displayException HeaderBadNumericEncoding = "tar header is malformed (bad numeric encoding)"
+#else
+  deriving (Eq, Typeable)
+
+instance Show FormatError where
+  show TruncatedArchive         = "truncated tar archive"
+  show ShortTrailer             = "short tar trailer"
+  show BadTrailer               = "bad tar trailer"
+  show TrailingJunk             = "tar file has trailing junk"
+  show ChecksumIncorrect        = "tar checksum error"
+  show NotTarFormat             = "data is not in tar format"
+  show UnrecognisedTarFormat    = "tar entry not in a recognised format"
+  show HeaderBadNumericEncoding = "tar header is malformed (bad numeric encoding)"
+
+instance Exception FormatError
+#endif
+
+instance NFData    FormatError where
+  rnf !_ = () -- enumerations are fully strict by construction
 
 data Ownership = Ownership {
     -- | The owner user name. Should be set to @\"\"@ if unknown.
@@ -515,7 +564,6 @@ fromLinkTargetToWindowsPath (LinkTarget pathbs) = adjustDirectory $
 data Entries e = Next Entry (Entries e)
                | Done
                | Fail e
-  deriving (Eq, Show)
 
 infixr 5 `Next`
 
@@ -533,6 +581,15 @@ unfoldEntries f = unfold
       Left err             -> Fail err
       Right Nothing        -> Done
       Right (Just (e, x')) -> Next e (unfold x')
+
+unfoldEntriesM :: Monad m => (a -> m (Either e (Maybe (Entry, a)))) -> a -> m (Entries e)
+unfoldEntriesM f = unfold
+  where
+    unfold x = f x >>= \case
+      Left err             -> pure $ Fail err
+      Right Nothing        -> pure $ Done
+      Right (Just (e, x')) -> Next e <$> (unfold x')
+{-# INLINABLE unfoldEntriesM #-}
 
 -- | This is like the standard 'foldr' function on lists, but for 'Entries'.
 -- Compared to 'foldr' it takes an extra function to account for the
@@ -752,4 +809,3 @@ limitToV7FormatCompat entry@Entry { entryFormat = V7Format } =
 limitToV7FormatCompat entry = entry
 
 #endif
-
