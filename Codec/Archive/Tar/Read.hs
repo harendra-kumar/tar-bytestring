@@ -26,7 +26,6 @@ import Control.Monad
 import Control.Monad.Trans.Except
 import Control.Monad.IO.Class (liftIO)
 import Control.DeepSeq
-import Streamly
 import Streamly.Prelude (cons, consM)
 
 import qualified Data.ByteString        as BS
@@ -37,8 +36,10 @@ import qualified Streamly.Prelude as S
 import qualified Streamly.FileSystem.Handle    as FH
 import qualified Streamly.Internal.Data.Unfold as SU
 import qualified Streamly.Internal.FileSystem.Handle as IFH
-import qualified Streamly.Internal.Memory.ArrayStream as AS
-import qualified Streamly.Memory.Array as MA
+import qualified Streamly.Internal.Data.Array.Stream.Foreign as AS
+import qualified Streamly.Internal.Data.Array.Stream.Fold.Foreign as ArrFold
+import qualified Streamly.Data.Fold as Fold
+import qualified Streamly.External.ByteString as SBS
 
 import Prelude hiding (read)
 import Data.Word (Word8)
@@ -59,16 +60,26 @@ import qualified Data.ByteString.Lazy.Internal as LBS
 read :: LBS.ByteString -> Entries FormatError
 read = unfoldEntries getEntry
 
-read' :: SerialT IO Word8 -> SerialT (ExceptT FormatError IO) Entry
-read' = S.unfoldrM getEntry'
+read' ::
+   (Entry -> IO (ArrFold.Fold (ExceptT FormatError IO) Word8 ()))
+    -> ArrFold.Fold (ExceptT FormatError IO) Word8 ()
+read' func = do
+    chunk <- ArrFold.fromFold $ Fold.take 512 SBS.write
+    res <- ArrFold.yieldM $ getEntry' chunk
+    case res of
+        Just (entry, sz) -> do
+            fld <- ArrFold.yieldM $ liftIO $ func entry
+            ArrFold.take sz fld
+            ArrFold.fromFold $ Fold.take (padsize sz) Fold.drain
+        Nothing -> ArrFold.fromFold Fold.drain
 
--- unfoldrM :: (IsStream t, MonadAsync m) => (b -> m (Maybe (a, b))) -> b -> t m a 
+  where
 
-getEntry' :: SerialT IO Word8
-          -> ExceptT FormatError IO (Maybe (Entry, SerialT IO Word8))
-getEntry' stream = do
+  padsize size = (512 - size) `mod` 512
+
+getEntry' :: BS.ByteString -> ExceptT FormatError IO (Maybe (Entry, Int))
+getEntry' header = do
   liftIO $ putStrLn $ "start"
-  header <- fmap BS.pack $ liftIO $ S.toList $ S.take 512 stream
 
   let name       = getString   0 100 header
       mode_      = partial $ getOct    100   8 header
@@ -93,11 +104,11 @@ getEntry' stream = do
 
 
   liftIO $ putStrLn $ "mid"
-  head' <- liftIO $ S.head stream
+  let head' = Just $ BS.head header
   when (BS.length header < 512) $ throwE TruncatedArchive
   if | head' == Just 0 -> do
-        let (end, trailing) = splitAt' 1024 stream
-        liftIO (S.length end) >>= \lEnd -> when (lEnd /= 1024) $ throwE ShortTrailer
+        -- let (end, trailing) = splitAt' 1024 stream
+        -- liftIO (S.length end) >>= \lEnd -> when (lEnd /= 1024) $ throwE ShortTrailer
         -- liftIO (S.all (== 0) end) >>= \b -> when (not b) $ throwE BadTrailer
         -- liftIO (S.all (== 0) trailing) >>= \b -> when (not b) $ throwE TrailingJunk
         pure Nothing
@@ -115,26 +126,27 @@ getEntry' stream = do
 
         liftIO $ putStrLn $ show (TarPath name prefix)
 
-        let content = S.take (fromIntegral size) (S.drop 512 stream)
+        let {- content = S.take (fromIntegral size) (S.drop 512 stream)
             padding = (512 - size) `mod` 512
             restStream = S.drop (512 + size + padding) stream
+            -}
 
 
             entry = Entry {
               entryTarPath     = TarPath name prefix,
               entryContent     = case typecode of
-                         '\0' -> NormalFileS      content (fromIntegral size)
-                         '0'  -> NormalFileS      content (fromIntegral size)
+                         '\0' -> NormalFileS      undefined (fromIntegral size)
+                         '0'  -> NormalFileS      undefined (fromIntegral size)
                          '1'  -> HardLink        (LinkTarget linkname)
                          '2'  -> SymbolicLink    (LinkTarget linkname)
                          _ | format == V7Format
-                              -> OtherEntryTypeS  typecode content (fromIntegral size)
+                              -> OtherEntryTypeS  typecode undefined (fromIntegral size)
                          '3'  -> CharacterDevice devmajor devminor
                          '4'  -> BlockDevice     devmajor devminor
                          '5'  -> Directory
                          '6'  -> NamedPipe
-                         '7'  -> NormalFileS      content (fromIntegral size)
-                         _    -> OtherEntryTypeS  typecode content (fromIntegral size),
+                         '7'  -> NormalFileS      undefined (fromIntegral size)
+                         _    -> OtherEntryTypeS  typecode undefined (fromIntegral size),
               entryPermissions = mode,
               entryOwnership   = Ownership (BS.Char8.unpack uname)
                                            (BS.Char8.unpack gname) uid gid,
@@ -142,15 +154,7 @@ getEntry' stream = do
               entryFormat      = format
           }
 
-        return (Just (entry, restStream))
-  where
-    splitAt' :: (Monad m, IsStream t) => Int -> t m a -> (t m a, t m a)
-    splitAt' i s =
-      let head' = S.take i s
-          tail' = S.drop i s
-      in (head', tail')
-{-# NOINLINE getEntry' #-}
-
+        return (Just (entry, size))
 
 getEntry :: LBS.ByteString -> Either FormatError (Maybe (Entry, LBS.ByteString))
 getEntry bs

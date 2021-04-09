@@ -15,7 +15,7 @@
 -----------------------------------------------------------------------------
 module Codec.Archive.Tar.Unpack (
   unpack,
-  unpack',
+  unpack'
   ) where
 
 import Codec.Archive.Tar.Types
@@ -34,6 +34,7 @@ import Control.Exception
          ( Exception, throwIO, handle )
 import System.IO.Error
          ( ioeGetErrorType )
+import  System.IO (openFile, IOMode(..))
 import GHC.IO (unsafeInterleaveIO)
 import Data.Foldable (traverse_)
 import GHC.IO.Exception (IOErrorType(InappropriateType, IllegalOperation, PermissionDenied, InvalidArgument))
@@ -51,15 +52,18 @@ import System.IO.Error
 import System.Directory
          ( createDirectoryLink, createFileLink )
 #endif
+import qualified Streamly.Internal.Data.Array.Stream.Fold.Foreign as ArrFold
 import qualified Streamly.Internal.FileSystem.File as File
-import Streamly
+import qualified Streamly.Internal.FileSystem.Handle as Handle
 import Streamly.Prelude (cons, consM)
 import Control.Monad.Trans.Except
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (MonadIO(..))
+import Control.Monad.Catch (MonadCatch)
+import Data.Word (Word8)
 
-unpack' :: FilePath -> SerialT (ExceptT FormatError IO) Entry -> SerialT (ExceptT FormatError IO) ()
-unpack' baseDir stream = do
-  stream >>= \e -> unpackEntry e
+unpack' :: (MonadIO m, MonadCatch m) =>
+    FilePath -> Entry -> IO (ArrFold.Fold m (Word8) ())
+unpack' baseDir e = unpackEntry e
 
   where
     unpackEntry entry@(Entry { entryContent = (NormalFileS file _)}) =
@@ -70,11 +74,13 @@ unpack' baseDir stream = do
         -- (unpackEntries $! saveLink True (entryPath entry) link links) es
     -- unpackEntry entry@(Entry { entryContent = (SymbolicLink link)}) =
         -- (unpackEntries $! saveLink False (entryPath entry) link links) es
-    unpackEntry _ = pure ()
+    unpackEntry _ = pure $ ArrFold.yield ()
 
     extractFile' path content mtime = do
       createDirectoryIfMissing True absDir
-      -- File.fromBytes absPath content
+      fh <- liftIO $ openFile absPath WriteMode
+      return $ ArrFold.fromArrayFold $ Handle.writeChunks fh
+      -- return $ ArrFold.fromArrayFold $ File.writeChunks absPath
       -- setModTime absPath mtime
       where
         absDir  = baseDir </> FilePath.Native.takeDirectory path
@@ -83,6 +89,7 @@ unpack' baseDir stream = do
     extractDir path mtime = do
       createDirectoryIfMissing True absPath
       setModTime absPath mtime
+      return $ ArrFold.yield ()
       where
         absPath = baseDir </> path
 

@@ -7,6 +7,7 @@ import qualified Codec.Archive.Tar.Entry as Tar
 import qualified Codec.Compression.GZip as GZip (compress, decompress)
 import qualified Codec.Compression.BZip as BZip (compress, decompress)
 import qualified Streamly.Internal.FileSystem.File as File
+import qualified Streamly.Internal.Data.Array.Stream.Foreign as ArrStream
 
 import Control.Exception     (throwIO)
 import qualified Data.ByteString.Lazy as BS
@@ -45,7 +46,11 @@ main' (Options { optFile        = file,
     Help     -> printUsage
     Create   -> output . compress compression
                        . Tar.write =<< Tar.pack dir files
-    Extract  -> void $ runExceptT $ S.drain $ Tar.unpack' dir $ Tar.read' $ File.toBytes file
+    Extract -> void
+            $ runExceptT
+            $ S.drain
+            $ ArrStream.foldMany (Tar.read' (Tar.unpack' dir))
+            $ File.toChunks file
     List     -> printEntries . Tar.read . decompress compression =<< input
     Append    | compression /= None
              -> die ["Append cannot be used together with compression."]

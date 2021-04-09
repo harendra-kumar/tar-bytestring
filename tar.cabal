@@ -48,8 +48,9 @@ library
                  deepseq    >= 1.1 && < 1.5,
                  mtl,
                  transformers,
-                 streamly   >= 0.7.3,
-                 streamly-bytestring
+                 streamly   >= 0.7.2,
+                 streamly-bytestring,
+                 exceptions
 
   if flag(old-time)
     build-depends: directory < 1.2, old-time < 1.2

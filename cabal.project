@@ -1,2 +1,12 @@
 packages: tar.cabal
           htar/htar.cabal
+
+source-repository-package
+    type: git
+    location: https://github.com/composewell/streamly
+    tag: master
+
+source-repository-package
+    type: git
+    location: https://github.com/psibi/streamly-bytestring
+    tag: 4ccbcf2183749dc793e00e9d2bf16005e9fc316f
